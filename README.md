@@ -6,6 +6,7 @@ My personal AI skills for development workflows.
 
 - **tdd** — Implement features using strict TDD (red-green-refactor) with ZOMBIES ordering
 - **spec** — Break features into acceptance criteria
+- **code-review** — Review code changes or PRs for bugs, missing tests, security issues, and standard violations
 
 ## Setup
 
