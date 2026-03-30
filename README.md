@@ -5,7 +5,7 @@ My personal AI skills for development workflows.
 ## Skills
 
 - **tdd** — Implement features using strict TDD (red-green-refactor) with ZOMBIES ordering
-- **spec** — *(coming soon)* Break features into acceptance criteria
+- **spec** — Break features into acceptance criteria
 
 ## Setup
 
