@@ -88,6 +88,14 @@ A ★ test on a critical path (auth, payments, data mutation) is a blocker. A �
 - Are public APIs, hooks, or contracts changed without a migration path?
 - Are database schema or option changes backwards-compatible?
 
+### Specialist checks (only when relevant)
+
+These only apply when the diff touches the relevant area. Skip entirely if it doesn't.
+
+- **Auth, sessions, or permissions?** → Check for privilege escalation, token handling, session invalidation on sensitive operations
+- **Database schema or migrations?** → Check rollback safety, backwards compatibility with running code, data loss risk
+- **API routes or response shapes?** → Check for breaking contract changes, missing versioning, undocumented fields
+
 ## 4. Present findings
 
 Organize findings by severity:
