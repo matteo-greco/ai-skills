@@ -4,21 +4,30 @@ My personal AI skills for development workflows.
 
 ## Skills
 
-- **tdd** — Implement features using strict TDD (red-green-refactor) with ZOMBIES ordering
-- **spec** — Break features into acceptance criteria
-- **code-review** — Review code changes or PRs for bugs, missing tests, security issues, and standard violations
-- **code-health** — Identify unhealthy areas of a codebase and suggest refactoring strategies ranked by impact
-- **refactor** — Execute a refactoring safely with incremental steps, test verification, and safety assessment
-- **bug-triage** — Investigate a bug report, reproduce it as a failing test, and hand off to /tdd for the fix
-- **adr** — Document an architectural decision with context, alternatives, and consequences
-- **create-tickets** — Create one or more well-structured tickets from a spec, ACs, or feature description
-- **release** — Cut a release by driving existing CI automation, crafting a polished changelog, and writing an announcement
+Awareness:
+- **pulse** — Daily situational awareness — orchestrates `/eng-status` and `/feedback-synthesis`, checks alignment against goals
 - **feedback-synthesis** — Scan user feedback sources and distill patterns into actionable insights for planning
-- **spike** — Time-boxed technical investigation to answer a question and unblock /spec or /tdd
+- **eng-status** — Scan planned work, git activity, PRs, CI/CD health, and delivery cadence
 - **onboarding** — Guided tour of a codebase area, tailored to the reader's background and goals
 - **incident** — Respond to a production incident — gather evidence, assess severity, coordinate a fix, write the postmortem
-- **eng-status** — Scan planned work, git activity, PRs, CI/CD health, and delivery cadence
-- **pulse** — Daily situational awareness — orchestrates /eng-status and /feedback-synthesis, checks alignment against goals
+
+Planning:
+- **spike** — Time-boxed technical investigation to answer a question and unblock `/spec` or `/tdd`
+- **spec** — Break features into acceptance criteria
+- **bug-triage** — Investigate a bug report, reproduce it as a failing test, and hand off to `/tdd` for the fix
+- **create-tickets** — Create one or more well-structured tickets from a spec, ACs, or feature description
+
+Implementation:
+- **tdd** — Implement features using strict TDD (red-green-refactor) with ZOMBIES ordering
+- **code-health** — Identify unhealthy areas of a codebase and suggest refactoring strategies ranked by impact
+- **refactor** — Execute a refactoring safely with incremental steps, test verification, and safety assessment
+
+Shipping:
+- **code-review** — Review code changes or PRs for bugs, missing tests, security issues, and standard violations
+- **release** — Cut a release by driving existing CI automation, crafting a polished changelog, and writing an announcement
+
+Documentation:
+- **adr** — Document an architectural decision with context, alternatives, and consequences
 
 ## Typical scenarios
 
@@ -35,23 +44,23 @@ Or if it's not urgent: `/bug-triage` → `/create-tickets` → fix later
 **"We're not sure this is feasible"**
 `/spike` → investigate → `/adr` to document the decision → `/spec` if feasible
 
-**"What should we build next?"**
-`/feedback-synthesis` → surface user patterns → `/spec` the top pain point → `/create-tickets`
+**"I want to understand this area before touching it"**
+`/onboarding` → guided tour of the area → `/adr` to document decisions → `/spec` if ready to change it
 
 **"Something is broken in production"**
 `/incident` → stabilize → `/bug-triage` → root cause fix → `/code-review` → `/release` → `/adr` if architectural change needed
 
+**"Changes have piled up without a release"**
+`/release` → drive CI automation, craft changelog, write announcement
+
+**"What should we build next?"**
+`/feedback-synthesis` → surface user patterns → `/spec` the top pain point → `/create-tickets`
+
 **"Start of day — what's going on?"**
 `/pulse` → alignment check against goals (dispatches `/eng-status` + `/feedback-synthesis`)
 
-**"I want to understand this area before touching it"**
-`/onboarding` → guided tour of the area → `/adr` to document decisions → `/spec` if ready to change it
-
 **"New dev joining the team"**
 `/onboarding` → guided tour of the codebase
-
-**"Time to ship"**
-`/release` → drive CI automation, craft changelog, write announcement
 
 ## Setup
 
