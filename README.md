@@ -19,6 +19,35 @@ My personal AI skills for development workflows.
 - **eng-status** — Scan planned work, git activity, PRs, CI/CD health, and delivery cadence
 - **pulse** — Daily situational awareness — orchestrates /eng-status and /feedback-synthesis, checks alignment against goals
 
+## Typical scenarios
+
+**"I have a feature idea"**
+`/spec` → write ACs → `/tdd` → implement → `/code-review` → `/release`
+
+**"A user reported a bug"**
+`/bug-triage` → reproduce as failing test → `/tdd` → fix → `/code-review` → `/release`
+
+**"This code is a mess"**
+`/code-health` → identify hotspots → `/refactor` → improve incrementally
+
+**"We're not sure this is feasible"**
+`/spike` → investigate → `/adr` to document the decision → `/spec` if feasible
+
+**"What should we build next?"**
+`/feedback-synthesis` → surface user patterns → `/spec` the top pain point
+
+**"Something is broken in production"**
+`/incident` → stabilize → `/bug-triage` → root cause fix → `/adr` if architectural change needed
+
+**"Start of day — what's going on?"**
+`/pulse` → alignment check against goals (dispatches `/eng-status` + `/feedback-synthesis`)
+
+**"New dev joining the team"**
+`/onboarding` → guided tour of the codebase
+
+**"Time to ship"**
+`/release` → drive CI automation, craft changelog, write announcement
+
 ## Setup
 
 Symlink into Claude Code's skills directory:
