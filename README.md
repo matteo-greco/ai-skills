@@ -8,6 +8,7 @@ My personal AI skills for development workflows.
 - **spec** — Break features into acceptance criteria
 - **code-review** — Review code changes or PRs for bugs, missing tests, security issues, and standard violations
 - **code-health** — Identify unhealthy areas of a codebase and suggest refactoring strategies ranked by impact
+- **refactor** — Execute a refactoring safely with incremental steps, test verification, and safety assessment
 
 ## Setup
 
