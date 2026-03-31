@@ -2,6 +2,14 @@
 
 My personal AI skills for development workflows.
 
+## Setup
+
+Install all skills via [skills.sh](https://skills.sh):
+
+```bash
+npx skills add matteo-greco/ai-skills
+```
+
 ## Skills
 
 Awareness:
@@ -61,14 +69,6 @@ Or if it's not urgent: `/bug-triage` → `/create-tickets` → fix later
 
 **"New dev joining the team"**
 `/onboarding` → guided tour of the codebase
-
-## Setup
-
-Symlink into Claude Code's skills directory:
-
-```bash
-ln -s ~/code/ai-skills/tdd ~/.claude/skills/tdd
-```
 
 ## Acknowledgments
 
