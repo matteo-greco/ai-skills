@@ -10,6 +10,7 @@ My personal AI skills for development workflows.
 - **code-health** — Identify unhealthy areas of a codebase and suggest refactoring strategies ranked by impact
 - **refactor** — Execute a refactoring safely with incremental steps, test verification, and safety assessment
 - **bug-triage** — Investigate a bug report, reproduce it as a failing test, and hand off to /tdd for the fix
+- **adr** — Document an architectural decision with context, alternatives, and consequences
 
 ## Setup
 
