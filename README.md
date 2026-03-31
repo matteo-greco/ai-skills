@@ -20,6 +20,7 @@ Awareness:
 - **incident** — Respond to a production incident — gather evidence, assess severity, coordinate a fix, write the postmortem
 
 Planning:
+- **challenge** — Challenge and refine a product direction — elicit the real problem, stress-test assumptions, explore alternatives, and scope down
 - **spike** — Time-boxed technical investigation to answer a question and unblock `/spec` or `/tdd`
 - **spec** — Break features into acceptance criteria
 - **bug-triage** — Investigate a bug report, reproduce it as a failing test, and hand off to `/tdd` for the fix
@@ -38,6 +39,9 @@ Documentation:
 - **adr** — Document an architectural decision with context, alternatives, and consequences
 
 ## Typical scenarios
+
+**"The CEO wants us to build X"**
+`/challenge` → refine the vision → `/spec` → write ACs → `/create-tickets` → `/tdd` → implement → `/code-review` → `/release`
 
 **"Let's build this feature"**
 `/spec` → write ACs → `/create-tickets` → track the work → `/tdd` → implement → `/code-review` → `/release`
