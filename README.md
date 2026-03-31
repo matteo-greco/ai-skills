@@ -7,14 +7,17 @@ My personal AI skills for development workflows.
 Install via [skills.sh](https://skills.sh):
 
 ```bash
-npx skills add matteo-greco/ai-skills        # interactive — pick skills and agents
-npx skills add matteo-greco/ai-skills --all   # install all skills to all agents
-```
+# install (interactive — pick skills and agents)
+npx skills add matteo-greco/ai-skills -g
 
-Update to the latest version:
+# install all skills, default agents, no prompts
+npx skills add matteo-greco/ai-skills -g -s '*' -y
 
-```bash
-npx skills update
+# update (re-run the install command — it overwrites existing skills)
+npx skills add matteo-greco/ai-skills -g -s '*' -y
+
+# uninstall
+npx skills remove -g challenge code-review code-health create-tickets bug-triage spec tdd spike refactor release adr onboarding feedback-synthesis eng-status pulse incident
 ```
 
 ## Skills
