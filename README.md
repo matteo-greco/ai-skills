@@ -14,6 +14,7 @@ My personal AI skills for development workflows.
 - **release** — Cut a release by driving existing CI automation, crafting a polished changelog, and writing an announcement
 - **feedback-synthesis** — Scan user feedback sources and distill patterns into actionable insights for planning
 - **spike** — Time-boxed technical investigation to answer a question and unblock /spec or /tdd
+- **onboarding** — Guided tour of a codebase area, tailored to the reader's background and goals
 
 ## Setup
 
