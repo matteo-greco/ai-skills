@@ -4,10 +4,17 @@ My personal AI skills for development workflows.
 
 ## Setup
 
-Install all skills via [skills.sh](https://skills.sh):
+Install via [skills.sh](https://skills.sh):
 
 ```bash
-npx skills add matteo-greco/ai-skills
+npx skills add matteo-greco/ai-skills        # interactive — pick skills and agents
+npx skills add matteo-greco/ai-skills --all   # install all skills to all agents
+```
+
+Update to the latest version:
+
+```bash
+npx skills update
 ```
 
 ## Skills
