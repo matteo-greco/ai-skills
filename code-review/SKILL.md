@@ -51,6 +51,17 @@ Evaluate the changes against each category below. Only report **actual problems*
 - Are hooks, events, or APIs named consistently with existing code?
 
 ### Test coverage
+
+**Trace new codepaths:** For each new or modified function/endpoint/component, trace the data flow from entry to exit. At every branch, identify four paths: happy path, null/missing input, empty/zero-length input, and upstream error. Check each path against existing tests.
+
+**Score what exists:** Rate each tested codepath:
+- ★★★ Tests behavior with edge cases AND error paths
+- ★★ Tests correct behavior, happy path only
+- ★ Smoke test / existence check
+
+A ★ test on a critical path (auth, payments, data mutation) is a blocker. A ★★ test on a non-critical path is a note.
+
+**Check for gaps:**
 - Are new features covered by tests?
 - Are bug fixes accompanied by a test that captures the bug?
 - Are refactors covered by existing tests, or were tests added first?
@@ -87,10 +98,21 @@ Organize findings by severity:
 
 **Notes** — Optional observations. Minor suggestions, questions about intent, things that look intentional but worth confirming.
 
+For each finding, assess your **confidence** — how sure are you that this is a real problem?
+
+- **Certain** — you read the code, traced the logic, and this is definitively wrong. Example: a null dereference on a code path with no guard.
+- **Likely** — the pattern strongly suggests a bug, but you can't fully verify without running it or seeing runtime behavior. Example: a race condition that depends on timing.
+- **Possible** — something smells off but you're not sure. You might be missing context. Example: an unchecked return value that might be intentionally ignored.
+
+Confidence determines how to report:
+- **Certain** findings are reported normally at their severity level.
+- **Likely** findings are reported with a caveat ("I believe this is a bug because X, but I can't fully verify Y").
+- **Possible** findings are only reported if they'd be blockers. Otherwise, drop them — speculative notes are noise.
+
 Use this format for each finding:
 
 ```
-### [BLOCKER|WARNING|NOTE] Short description
+### [BLOCKER|WARNING|NOTE] Short description (confidence: certain|likely)
 
 **File:** path/to/file.ext, near line N
 **What:** Describe the problem concretely
@@ -106,7 +128,7 @@ End with one of:
 - **Needs fixes** — Blockers found. Summarize what must change.
 - **Needs discussion** — Architectural or design questions that should be resolved first.
 
-If you're uncertain about any area — complex logic you couldn't fully verify, unfamiliar code — say so explicitly. A honest "I'm not sure about X" is more useful than false confidence.
+If you're uncertain about any area — complex logic you couldn't fully verify, unfamiliar code — say so explicitly. An honest "I'm not sure about X" is more useful than false confidence. Use the confidence levels to signal this rather than hedging in prose.
 
 ## Rules
 
