@@ -15,6 +15,7 @@ My personal AI skills for development workflows.
 - **feedback-synthesis** — Scan user feedback sources and distill patterns into actionable insights for planning
 - **spike** — Time-boxed technical investigation to answer a question and unblock /spec or /tdd
 - **onboarding** — Guided tour of a codebase area, tailored to the reader's background and goals
+- **incident** — Respond to a production incident — gather evidence, assess severity, coordinate a fix, write the postmortem
 
 ## Setup
 
