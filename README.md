@@ -22,14 +22,12 @@ My personal AI skills for development workflows.
 
 ## Typical scenarios
 
-**"I have a feature idea"**
+**"Let's build this feature"**
 `/spec` → write ACs → `/create-tickets` → track the work → `/tdd` → implement → `/code-review` → `/release`
 
 **"A user reported a bug"**
 `/bug-triage` → reproduce as failing test → `/tdd` → fix → `/code-review` → `/release`
-
-**"We have a spec, let's track it"**
-`/create-tickets` → split into tickets → `/tdd` → implement each one
+Or if it's not urgent: `/bug-triage` → `/create-tickets` → fix later
 
 **"This code is a mess"**
 `/code-health` → identify hotspots → `/refactor` → improve incrementally
@@ -38,13 +36,16 @@ My personal AI skills for development workflows.
 `/spike` → investigate → `/adr` to document the decision → `/spec` if feasible
 
 **"What should we build next?"**
-`/feedback-synthesis` → surface user patterns → `/spec` the top pain point
+`/feedback-synthesis` → surface user patterns → `/spec` the top pain point → `/create-tickets`
 
 **"Something is broken in production"**
-`/incident` → stabilize → `/bug-triage` → root cause fix → `/adr` if architectural change needed
+`/incident` → stabilize → `/bug-triage` → root cause fix → `/code-review` → `/release` → `/adr` if architectural change needed
 
 **"Start of day — what's going on?"**
 `/pulse` → alignment check against goals (dispatches `/eng-status` + `/feedback-synthesis`)
+
+**"I want to understand this area before touching it"**
+`/onboarding` → guided tour of the area → `/adr` to document decisions → `/spec` if ready to change it
 
 **"New dev joining the team"**
 `/onboarding` → guided tour of the codebase
