@@ -89,7 +89,7 @@ Present findings grouped by area (file or module), ordered by priority. For each
 
 **Suggested refactoring:**
 - [Strategy] — [what to do and what pattern to apply]
-- ...
+- **Safety: [Safe / Caution / Unsafe]** — [why]
 ```
 
 ## Step 4: Suggest refactoring strategies
@@ -112,6 +112,18 @@ Common strategies to draw from:
 | Deep inheritance | Favor composition, extract behavior | Strategy, Composition over Inheritance |
 
 Don't just name the pattern — sketch how it applies. "Extract a `NotificationService` that receives a `Mailer` via constructor instead of calling `Mailer::getInstance()` directly" is useful. "Apply Dependency Injection" is not.
+
+### Assess refactoring safety
+
+For each suggested refactoring, assess how safe it is to perform based on the test coverage around the affected code:
+
+- **Safe** — The area has good test coverage with behavior-focused tests. You can refactor with confidence that the tests will catch regressions. The tests verify *what* the code does, not *how* it does it, so they'll still pass after internal restructuring.
+- **Caution** — Tests exist but are implementation-focused (heavy mocking, testing internal wiring, brittle assertions on call order). The refactoring may break tests even if behavior is preserved. Plan to fix or rewrite the affected tests as part of the refactoring.
+- **Unsafe** — Little or no test coverage. The refactoring risks introducing regressions with no safety net. Two paths forward:
+  1. **Preferred:** Write characterization tests to lock in current behavior, then refactor. A characterization test captures what the code *currently does* — not what it *should* do. Run the code, observe its output, assert that output. The goal is a safety net for refactoring, not validation of correctness.
+  2. **When tests aren't practical yet:** Limit the refactoring to small, mechanical tidyings — extract method, extract variable, extract constant, rename, reorder. These are low-risk structure-preserving moves that don't change behavior. Each tidying should be its own commit. Avoid larger refactorings (changing interfaces, moving responsibilities, introducing abstractions) until the area is test-covered.
+
+State the safety level for each suggestion and explain why — what tests exist, what they cover, and whether they test behavior or implementation. For unsafe areas, be explicit about which path you're recommending and why.
 
 ## Step 5: Discuss with the user
 
