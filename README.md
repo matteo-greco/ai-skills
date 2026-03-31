@@ -12,6 +12,7 @@ My personal AI skills for development workflows.
 - **bug-triage** — Investigate a bug report, reproduce it as a failing test, and hand off to /tdd for the fix
 - **adr** — Document an architectural decision with context, alternatives, and consequences
 - **release** — Cut a release by driving existing CI automation, crafting a polished changelog, and writing an announcement
+- **feedback-synthesis** — Scan user feedback sources and distill patterns into actionable insights for planning
 
 ## Setup
 
