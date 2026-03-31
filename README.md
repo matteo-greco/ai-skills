@@ -9,6 +9,7 @@ My personal AI skills for development workflows.
 - **code-review** — Review code changes or PRs for bugs, missing tests, security issues, and standard violations
 - **code-health** — Identify unhealthy areas of a codebase and suggest refactoring strategies ranked by impact
 - **refactor** — Execute a refactoring safely with incremental steps, test verification, and safety assessment
+- **bug-triage** — Investigate a bug report, reproduce it as a failing test, and hand off to /tdd for the fix
 
 ## Setup
 
