@@ -17,6 +17,7 @@ My personal AI skills for development workflows.
 - **onboarding** — Guided tour of a codebase area, tailored to the reader's background and goals
 - **incident** — Respond to a production incident — gather evidence, assess severity, coordinate a fix, write the postmortem
 - **eng-status** — Scan planned work, git activity, PRs, CI/CD health, and delivery cadence
+- **pulse** — Daily situational awareness — orchestrates /eng-status and /feedback-synthesis, checks alignment against goals
 
 ## Setup
 
