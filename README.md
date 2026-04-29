@@ -17,7 +17,7 @@ npx skills add matteo-greco/ai-skills -g -s '*' -y
 npx skills add matteo-greco/ai-skills -g -s '*' -y
 
 # uninstall
-npx skills remove -g challenge code-review code-health create-tickets bug-triage spec tdd spike refactor release adr onboarding feedback-synthesis eng-status pulse incident
+npx skills remove -g challenge code-review code-health create-tickets bug-triage spec tdd spike refactor release release-check adr onboarding feedback-synthesis eng-status pulse incident
 ```
 
 ## Skills
@@ -43,6 +43,7 @@ Implementation:
 
 Shipping:
 - **code-review** — Review code changes or PRs for bugs, missing tests, security issues, and standard violations
+- **release-check** — Assess what's about to release: summarize unreleased work via Linear tickets, judge AC completeness, surface blockers via `/code-review`
 - **release** — Cut a release by driving existing CI automation, crafting a polished changelog, and writing an announcement
 
 Documentation:
@@ -73,7 +74,10 @@ Or if it's not urgent: `/bug-triage` → `/create-tickets` → fix later
 `/incident` → stabilize → `/bug-triage` → root cause fix → `/code-review` → `/release` → `/adr` if architectural change needed
 
 **"Changes have piled up without a release"**
-`/release` → drive CI automation, craft changelog, write announcement
+`/release-check` → see what's landing and whether it's blocker-free → `/release` to cut it
+
+**"Is this branch safe to release?"**
+`/release-check` → user-facing summary of what landed + AC completeness + `/code-review` for blockers
 
 **"What should we build next?"**
 `/feedback-synthesis` → surface user patterns → `/spec` the top pain point → `/create-tickets`
