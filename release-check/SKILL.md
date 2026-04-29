@@ -1,7 +1,6 @@
 ---
 name: release-check
 description: Assess what's about to release in a repo — summarize unreleased work in user-facing terms via Linear tickets, judge AC completeness, and surface release blockers via /code-review.
-disable-model-invocation: true
 user-invocable: true
 argument-hint: "[repo path, or blank for current working directory]"
 ---
