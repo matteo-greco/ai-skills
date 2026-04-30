@@ -17,7 +17,7 @@ npx skills add matteo-greco/ai-skills -g -s '*' -y
 npx skills add matteo-greco/ai-skills -g -s '*' -y
 
 # uninstall
-npx skills remove -g challenge code-review code-health create-tickets bug-triage spec tdd spike refactor release release-check adr onboarding feedback-synthesis eng-status pulse incident
+npx skills remove -g challenge code-review code-health create-tickets bug-triage spec tdd spike refactor release release-check adr onboarding feedback-synthesis eng-status pulse incident gdpr-audit-verify
 ```
 
 ## Skills
@@ -48,6 +48,9 @@ Shipping:
 
 Documentation:
 - **adr** — Document an architectural decision with context, alternatives, and consequences
+
+Compliance:
+- **gdpr-audit-verify** — Verify an external GDPR / TDDDG / ePrivacy audit by reproducing each claim in a real browser and classifying it against EU + DE rules and CJEU case law
 
 ## Typical scenarios
 
@@ -87,6 +90,9 @@ Or if it's not urgent: `/bug-triage` → `/create-tickets` → fix later
 
 **"New dev joining the team"**
 `/onboarding` → guided tour of the codebase
+
+**"A lawyer / regulator / compliance tool sent us an audit report"**
+`/gdpr-audit-verify` → reproduce each claim in a clean browser, classify against TDDDG § 25 + GDPR + case law, get a per-claim table and ranked fix list
 
 ## Acknowledgments
 
