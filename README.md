@@ -17,7 +17,7 @@ npx skills add matteo-greco/ai-skills -g -s '*' -y
 npx skills add matteo-greco/ai-skills -g -s '*' -y
 
 # uninstall
-npx skills remove -g challenge code-review code-health create-tickets bug-triage spec tdd spike refactor release release-check adr onboarding feedback-synthesis eng-status pulse incident gdpr-audit-verify
+npx skills remove -g challenge code-review code-health create-tickets bug-triage spec tdd spike refactor release release-check adr onboarding feedback-synthesis eng-status pulse incident gdpr-audit-verify recap
 ```
 
 ## Skills
@@ -26,6 +26,7 @@ Awareness:
 - **pulse** — Daily situational awareness — orchestrates `/eng-status` and `/feedback-synthesis`, checks alignment against goals
 - **feedback-synthesis** — Scan user feedback sources and distill patterns into actionable insights for planning
 - **eng-status** — Scan planned work, git activity, PRs, CI/CD health, and delivery cadence
+- **recap** — End-of-day brief — gathers your git activity + PM tickets (Linear/Jira/GH Issues via MCP), detects "today" from largest activity gap (handles night-shift workers), renders 3–5 terse executive bullets ready to paste into standup/Slack
 - **onboarding** — Guided tour of a codebase area, tailored to the reader's background and goals
 - **incident** — Respond to a production incident — gather evidence, assess severity, coordinate a fix, write the postmortem
 
@@ -87,6 +88,9 @@ Or if it's not urgent: `/bug-triage` → `/create-tickets` → fix later
 
 **"Start of day — what's going on?"**
 `/pulse` → alignment check against goals (dispatches `/eng-status` + `/feedback-synthesis`)
+
+**"End of day — what did I do?"**
+`/recap` → terse bullet brief of your git + ticket activity since the last meaningful break, paste-ready for standup or Slack. `--user <name>` to recap a teammate.
 
 **"New dev joining the team"**
 `/onboarding` → guided tour of the codebase
