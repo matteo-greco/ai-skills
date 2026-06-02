@@ -17,18 +17,14 @@ npx skills add matteo-greco/ai-skills -g -s '*' -y
 npx skills add matteo-greco/ai-skills -g -s '*' -y
 
 # uninstall
-npx skills remove -g challenge code-review code-health create-tickets bug-triage spec tdd spike refactor release release-check adr onboarding feedback-synthesis eng-status pulse incident gdpr-audit-verify recap
+npx skills remove -g challenge code-review code-health create-tickets bug-triage spec tdd spike refactor adr onboarding gdpr-audit-verify recap
 ```
 
 ## Skills
 
 Awareness:
-- **pulse** — Daily situational awareness — orchestrates `/eng-status` and `/feedback-synthesis`, checks alignment against goals
-- **feedback-synthesis** — Scan user feedback sources and distill patterns into actionable insights for planning
-- **eng-status** — Scan planned work, git activity, PRs, CI/CD health, and delivery cadence
 - **recap** — End-of-day brief — gathers your git activity + PM tickets (Linear/Jira/GH Issues via MCP), detects "today" from largest activity gap (handles night-shift workers), renders 3–5 terse executive bullets ready to paste into standup/Slack
 - **onboarding** — Guided tour of a codebase area, tailored to the reader's background and goals
-- **incident** — Respond to a production incident — gather evidence, assess severity, coordinate a fix, write the postmortem
 
 Planning:
 - **challenge** — Challenge and refine a product direction — elicit the real problem, stress-test assumptions, explore alternatives, and scope down
@@ -44,8 +40,6 @@ Implementation:
 
 Shipping:
 - **code-review** — Review code changes or PRs for bugs, missing tests, security issues, and standard violations
-- **release-check** — Assess what's about to release: summarize unreleased work via Linear tickets, judge AC completeness, surface blockers via `/code-review`
-- **release** — Cut a release by driving existing CI automation, crafting a polished changelog, and writing an announcement
 
 Documentation:
 - **adr** — Document an architectural decision with context, alternatives, and consequences
@@ -56,13 +50,13 @@ Compliance:
 ## Typical scenarios
 
 **"The CEO wants us to build X"**
-`/challenge` → refine the vision → `/spec` → write ACs → `/create-tickets` → `/tdd` → implement → `/code-review` → `/release`
+`/challenge` → refine the vision → `/spec` → write ACs → `/create-tickets` → `/tdd` → implement → `/code-review`
 
 **"Let's build this feature"**
-`/spec` → write ACs → `/create-tickets` → track the work → `/tdd` → implement → `/code-review` → `/release`
+`/spec` → write ACs → `/create-tickets` → track the work → `/tdd` → implement → `/code-review`
 
 **"A user reported a bug"**
-`/bug-triage` → reproduce as failing test → `/tdd` → fix → `/code-review` → `/release`
+`/bug-triage` → reproduce as failing test → `/tdd` → fix → `/code-review`
 Or if it's not urgent: `/bug-triage` → `/create-tickets` → fix later
 
 **"This code is a mess"**
@@ -73,21 +67,6 @@ Or if it's not urgent: `/bug-triage` → `/create-tickets` → fix later
 
 **"I want to understand this area before touching it"**
 `/onboarding` → guided tour of the area → `/adr` to document decisions → `/spec` if ready to change it
-
-**"Something is broken in production"**
-`/incident` → stabilize → `/bug-triage` → root cause fix → `/code-review` → `/release` → `/adr` if architectural change needed
-
-**"Changes have piled up without a release"**
-`/release-check` → see what's landing and whether it's blocker-free → `/release` to cut it
-
-**"Is this branch safe to release?"**
-`/release-check` → user-facing summary of what landed + AC completeness + `/code-review` for blockers
-
-**"What should we build next?"**
-`/feedback-synthesis` → surface user patterns → `/spec` the top pain point → `/create-tickets`
-
-**"Start of day — what's going on?"**
-`/pulse` → alignment check against goals (dispatches `/eng-status` + `/feedback-synthesis`)
 
 **"End of day — what did I do?"**
 `/recap` → terse bullet brief of your git + ticket activity since the last meaningful break, paste-ready for standup or Slack. `--user <name>` to recap a teammate.
