@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>think-through</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      .ink { font-family: ui-serif, Georgia, serif; }
+      .rec { background: linear-gradient(0deg, #eef2ff, #eef2ff); }
+    </style>
+  </head>
+  <body class="bg-stone-50 text-slate-800">
+    <!-- connection banner -->
+    <div id="banner" class="hidden sticky top-0 z-20 bg-amber-100 text-amber-900 text-sm text-center py-1">
+      reconnecting to the session…
+    </div>
+
+    <main class="max-w-3xl mx-auto px-5 py-10">
+      <header class="mb-8 flex items-end justify-between border-b border-stone-200 pb-4">
+        <div>
+          <h1 class="ink text-3xl text-slate-900">think&#8209;through</h1>
+          <p id="slug" class="text-stone-500 text-sm mt-1"></p>
+        </div>
+        <span id="status" class="text-xs uppercase tracking-wider text-stone-400">connecting…</span>
+      </header>
+
+      <section id="cards" class="space-y-5"></section>
+
+      <!-- approve / cancel footer -->
+      <footer id="footer" class="hidden mt-10 border-t border-stone-200 pt-6">
+        <label class="block text-xs uppercase tracking-wider text-stone-500 mb-1">Export path</label>
+        <input id="path" class="w-full font-mono text-sm rounded-md border border-stone-300 px-3 py-2 mb-3" />
+        <div class="flex gap-3">
+          <button id="approve" class="rounded-md bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 text-sm font-medium">
+            Approve &amp; export
+          </button>
+          <button id="cancel" class="rounded-md text-stone-500 hover:text-stone-800 px-3 py-2 text-sm">
+            Cancel
+          </button>
+        </div>
+      </footer>
+
+      <div id="terminal" class="hidden mt-10 text-center"></div>
+    </main>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const esc = (s) => (s ?? "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+      const editing = new Set(); // node ids currently in edit mode (lives across renders)
+      let lastSig = null;
+      let slug = "";
+      let pathTouched = false;
+
+      function signature(s) {
+        return JSON.stringify({
+          st: s.status,
+          n: s.tree.map((n) => [n.id, n.status, n.answer && n.answer.selected, n.answer && n.answer.rider]),
+          e: [...editing],
+        });
+      }
+
+      async function tick() {
+        let s;
+        try {
+          s = await (await fetch("/state")).json();
+          $("banner").classList.add("hidden");
+        } catch (e) {
+          $("banner").classList.remove("hidden");
+          $("status").textContent = "offline";
+          return;
+        }
+        slug = s.slug || "session";
+        $("slug").textContent = slug;
+        $("status").textContent = s.status;
+        if (s.status === "approved" || s.status === "cancelled") return terminal(s.status);
+
+        const sig = signature(s);
+        if (sig === lastSig) return; // no change → don't clobber in-progress typing
+        lastSig = sig;
+        render(s);
+      }
+
+      function render(s) {
+        const wrap = $("cards");
+        wrap.innerHTML = "";
+        let activeEl = null;
+        for (const n of s.tree) {
+          if (n.status === "retracted") {
+            wrap.appendChild(retractedCard(n));
+          } else if (n.status === "active") {
+            const el = liveCard(n, false);
+            wrap.appendChild(el);
+            activeEl = el;
+          } else if (editing.has(n.id)) {
+            wrap.appendChild(liveCard(n, true));
+          } else {
+            wrap.appendChild(resolvedCard(n));
+          }
+        }
+        // footer visible once there's no active question (all resolved)
+        const hasActive = s.tree.some((n) => n.status === "active");
+        $("footer").classList.toggle("hidden", hasActive || s.tree.length === 0);
+        if (!pathTouched) $("path").value = "docs/designs/" + slug + ".md";
+        if (activeEl) activeEl.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+
+      // ---- card variants ----
+      function meta(n) {
+        const r = n.rationale ? `<p class="text-stone-500 text-sm mb-2">${esc(n.rationale)}</p>` : "";
+        const rec = n.recommendation
+          ? `<p class="rec text-indigo-800 text-sm rounded px-2 py-1 mb-3">★ ${esc(n.recommendation)}</p>`
+          : "";
+        return r + rec;
+      }
+
+      function resolvedCard(n) {
+        const el = document.createElement("article");
+        el.className = "rounded-lg border border-stone-200 bg-white px-5 py-4";
+        const chips = (n.answer?.selected || [])
+          .map((x) => `<span class="inline-block bg-emerald-50 text-emerald-800 text-sm rounded px-2 py-0.5 mr-1">${esc(x)}</span>`)
+          .join("");
+        const rider = n.answer?.rider
+          ? `<blockquote class="border-l-2 border-stone-300 pl-3 text-stone-600 text-sm mt-2">${esc(n.answer.rider)}</blockquote>`
+          : "";
+        el.innerHTML = `
+          <div class="flex justify-between gap-3">
+            <h2 class="ink text-lg text-slate-900">${esc(n.question)}</h2>
+            <button data-edit="${n.id}" class="text-xs text-indigo-600 hover:underline shrink-0">edit</button>
+          </div>
+          <div class="mt-2">${chips || '<span class="text-stone-400 text-sm">—</span>'}${rider}</div>`;
+        el.querySelector("[data-edit]").onclick = () => {
+          editing.add(n.id);
+          lastSig = null;
+          tick();
+        };
+        return el;
+      }
+
+      function retractedCard(n) {
+        const el = document.createElement("article");
+        el.className = "rounded-lg border border-dashed border-stone-300 bg-stone-100 px-5 py-2 opacity-60";
+        el.innerHTML = `<div class="flex justify-between"><span class="text-stone-500 text-sm line-through">${esc(n.question)}</span>
+          <span class="text-[10px] uppercase tracking-wider text-stone-400">retracted</span></div>`;
+        return el;
+      }
+
+      function liveCard(n, isEdit) {
+        const el = document.createElement("article");
+        el.className =
+          "rounded-lg border-2 " + (isEdit ? "border-amber-400" : "border-indigo-500") + " bg-white px-5 py-4 shadow-sm";
+        let inputs = "";
+        const sel = new Set(n.answer?.selected || (isEdit ? [] : []));
+        const checkedDefault = (o) => (isEdit ? sel.has(o.label) : o.recommended);
+        if (n.answerType === "single" || n.answerType === "multi") {
+          const type = n.answerType === "single" ? "radio" : "checkbox";
+          inputs = (n.options || [])
+            .map(
+              (o) => `<label class="flex gap-2 items-start py-1.5 cursor-pointer">
+                <input type="${type}" name="opt-${n.id}" value="${esc(o.label)}" ${checkedDefault(o) ? "checked" : ""} class="mt-1">
+                <span><span class="font-medium">${esc(o.label)}</span>${o.detail ? `<span class="text-stone-500 text-sm"> — ${esc(o.detail)}</span>` : ""}</span>
+              </label>`,
+            )
+            .join("");
+          inputs += riderBox(n, "Add a caveat or alternative (optional)");
+        } else if (n.answerType === "free") {
+          inputs = `<textarea id="free-${n.id}" rows="4" class="w-full rounded-md border border-stone-300 px-3 py-2 text-sm" placeholder="Your answer…">${esc(n.answer?.rider || "")}</textarea>`;
+        } else if (n.answerType === "confirm") {
+          inputs = riderBox(n, "Anything to add before approving? (optional)");
+        }
+        el.innerHTML = `<h2 class="ink text-lg text-slate-900 mb-1">${esc(n.question)}</h2>${meta(n)}
+          <div class="space-y-1">${inputs}</div>
+          <div class="mt-4 flex gap-2">
+            <button class="rounded-md bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 text-sm font-medium">${isEdit ? "Save change" : n.answerType === "confirm" ? "Confirm" : "Answer"}</button>
+            ${isEdit ? `<button data-cancel-edit="${n.id}" class="text-stone-500 text-sm px-2">cancel</button>` : ""}
+          </div>`;
+        el.querySelector("button").onclick = () => submit(n, isEdit);
+        const ce = el.querySelector("[data-cancel-edit]");
+        if (ce) ce.onclick = () => { editing.delete(n.id); lastSig = null; tick(); };
+        return el;
+      }
+
+      function riderBox(n, ph) {
+        return `<textarea id="rider-${n.id}" rows="2" class="w-full mt-2 rounded-md border border-stone-300 px-3 py-2 text-sm" placeholder="${ph}">${esc(n.answer?.rider || "")}</textarea>`;
+      }
+
+      function collect(n) {
+        let selected = [];
+        let rider = "";
+        if (n.answerType === "single" || n.answerType === "multi") {
+          selected = [...document.querySelectorAll(`input[name="opt-${n.id}"]:checked`)].map((i) => i.value);
+          rider = ($(`rider-${n.id}`)?.value || "").trim();
+        } else if (n.answerType === "free") {
+          rider = ($(`free-${n.id}`)?.value || "").trim();
+        } else if (n.answerType === "confirm") {
+          selected = ["confirmed"];
+          rider = ($(`rider-${n.id}`)?.value || "").trim();
+        }
+        return { nodeId: n.id, selected, rider };
+      }
+
+      async function submit(n, isEdit) {
+        const body = collect(n);
+        await fetch(isEdit ? "/edit" : "/answer", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        editing.delete(n.id);
+        lastSig = null;
+        tick();
+      }
+
+      $("path").oninput = () => (pathTouched = true);
+      $("approve").onclick = async () => {
+        await fetch("/approve", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ path: $("path").value.trim() }),
+        });
+        tick();
+      };
+      $("cancel").onclick = async () => {
+        if (!confirm("Cancel this session? Nothing will be exported.")) return;
+        await fetch("/cancel", { method: "POST" });
+        tick();
+      };
+
+      function terminal(status) {
+        $("cards").classList.add("opacity-50", "pointer-events-none");
+        $("footer").classList.add("hidden");
+        const t = $("terminal");
+        t.classList.remove("hidden");
+        t.innerHTML =
+          status === "approved"
+            ? `<p class="ink text-xl text-emerald-700">Approved — design exported.</p><p class="text-stone-500 text-sm mt-1">You can close this tab.</p>`
+            : `<p class="ink text-xl text-stone-600">Cancelled.</p><p class="text-stone-500 text-sm mt-1">Nothing was written.</p>`;
+      }
+
+      tick();
+      setInterval(tick, 1000);
+    </script>
+  </body>
+</html>
