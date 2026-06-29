@@ -36,7 +36,8 @@ don't boot a session to ask "what do you want to build?".
 
 ## Prerequisites
 
-`tt` below is the helper CLI: `node "$SKILL_DIR/think-through.mjs"`. It wraps every server call
+`$SKILL_DIR` is this skill's own directory (the one containing this SKILL.md). `tt` below is the
+helper CLI: `node "$SKILL_DIR/think-through.mjs"`. It wraps every server call
 (boot, ask, wait, retract, state, export, kill) so the loop can't be fumbled. See PROTOCOL.md.
 `tt boot` preflights node and fails clearly if it's missing — **don't fall back to chat**.
 
