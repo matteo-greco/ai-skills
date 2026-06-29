@@ -162,7 +162,11 @@
               </label>`,
             )
             .join("");
-          inputs += riderBox(n, "Add a caveat or alternative (optional)");
+          inputs += `<label class="flex gap-2 items-start py-1.5 cursor-pointer border-t border-stone-100 mt-1 pt-2.5">
+              <input type="${type}" name="opt-${n.id}" value="None of the above" ${sel.has("None of the above") ? "checked" : ""} class="mt-1">
+              <span class="text-stone-600">None of the above<span class="text-stone-400 text-sm"> — my answer is in the note below</span></span>
+            </label>`;
+          inputs += riderBox(n, "A caveat, or your own answer if you picked “None of the above”");
         } else if (n.answerType === "free") {
           inputs = `<textarea id="free-${n.id}" rows="4" class="w-full rounded-md border border-stone-300 px-3 py-2 text-sm" placeholder="Your answer…">${esc(n.answer?.rider || "")}</textarea>`;
         } else if (n.answerType === "confirm") {

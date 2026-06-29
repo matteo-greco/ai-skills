@@ -44,6 +44,9 @@ it. A localhost socket won't drop, so timeouts are rare.
 - `recommendation` is required; mark one option `recommended: true` (UI pre-selects it).
 - `options` omitted for `answerType: "free"`. `confirm` cards need no options either.
 - Every non-`free` card also accepts a free-text **rider** — the UI always shows it.
+- `single`/`multi` cards auto-include a **"None of the above"** choice paired with the rider. When
+  the answer comes back as `selected: ["None of the above"]`, treat the **rider as the answer** —
+  the user rejected every option and wrote their own.
 
 ## Wait events (`tt wait` output)
 
