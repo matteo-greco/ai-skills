@@ -1,7 +1,10 @@
 # think-through — Design Doc
 
-> Status: design agreed, not yet built. This is the record of the grilling session that
-> shaped the skill. Implementation (SKILL.md, server.mjs, the HTML page) follows from here.
+> Status: v1 built and working (standalone skill). A **restructure into an engine + preset
+> skills** is agreed but not yet built — see [Restructure](#restructure-engine--presets) below
+> and the contracts in [ENGINE.md](ENGINE.md) + [PRESETS.md](PRESETS.md). The sections under
+> "What it is" / "Core decisions" / "Machinery" describe the working v1; the Restructure section
+> records what supersedes them.
 
 ## What it is
 
@@ -198,6 +201,82 @@ The motivating scenario: start a grill, join a 1-hour call, come back, lose noth
   session, read the registry file and `curl /state` to rehydrate the tree + cursor. The server
   is the source of truth; the registry is just the address.
 
+## Restructure: engine + drivers
+
+> Agreed in a follow-up grilling session, after v1 shipped and was used on a real feature.
+> This supersedes the "standalone skill" framing above. The engine contract is in
+> [ENGINE.md](ENGINE.md). The concrete walks that *drive* the engine are a separate suite,
+> captured outside this dir (the engine stays skill-agnostic) — see
+> `../feature-lifecycle-suite.md`. This section records the engine-side *why*.
+
+### The realisation
+
+think-through is not "a design-grilling skill" — it's a **skill-agnostic decision-walking
+engine**. The same ask→answer→refine loop serves many situations; the *meaning* of any
+particular walk lives in a separate **driving skill**, never in the engine.
+
+### Decisions
+
+1. **think-through becomes a pure engine — not user-invocable, and preset-free.** It owns the
+   scripts (`server.mjs`, the `tt` CLI, the page) and the loop/protocol contract, and exposes
+   **no preset, template, or domain vocabulary**. (Like a shared `grilling` core that thin skins
+   ride on.) Driving skills locate it by sibling path under `~/.claude/skills/`. Kept clean from
+   the start — no "temporary" bundling of drivers, since that would bake the very coupling the
+   split exists to prevent.
+
+2. **A driver provides all the meaning** (full interface in ENGINE.md): **seed** (what to
+   explore/load first), **questions** (the nodes), **artifact renderer** (the deliverable markdown
+   it re-pushes each turn), **artifact home** (default export path). The engine guarantees the
+   session, rendering, wait/wake, and the WYSIWYG save — nothing domain-specific.
+
+3. **Separate session + separate document per driver.** Drivers run at different times, so each
+   opens its own engine session and writes its own artifact. Composition flows through the
+   **saved documents** (durable), each driver **seeding** from prior ones. A shared live window
+   is at most a v2 same-sitting nicety.
+
+4. **Configurable, discoverable artifact homes.** Defaults work with zero setup; an optional
+   `.think-through.json` at repo root pins dirs + tracker so a driver can auto-find prior
+   artifacts to seed from. Per-run override stays in the approve UI's path field. (The *homes* are
+   an engine concern — predictable locations; *which* artifacts go where is a driver concern,
+   captured in the suite doc.)
+
+### Engine deepening — the live artifact pane (WYSIWYG)
+
+The card column alone is too shallow once a driver builds a *structured* artifact (e.g. an event
+model): you answer cards but the thing you actually care about is invisible until export. So the
+engine grows a second view. This is engine-level and **driver-agnostic** — the engine renders
+whatever markdown a driver pushes.
+
+5. **A live artifact pane beside the cards**, read-only, refreshed as decisions land. The engine
+   provides the seam (an artifact-push endpoint + a pane); each **driver provides the renderer**
+   (by pushing markdown). The pane appears only when an artifact has been pushed — drivers that
+   don't push get full-width cards.
+
+6. **WYSIWYG convergence: the artifact pane *is* the deliverable.** This replaces v1's
+   approve-time synthesis. The driver maintains the artifact live (`tt artifact` → `POST
+   /artifact`); on approve it is saved verbatim. Re-splits the two concepts v1 had conflated:
+   **card column = the interaction; artifact pane = the deliverable.** Renders markdown + Mermaid
+   via CDN. This subsumes the deferred **tree-view** — that's just another pane renderer.
+
+7. **Refinement flows through cards** (v1 of the pane is read-only). You don't click the artifact;
+   the driver proposes a change in a card, you reject/amend, the pane updates. v2 middle path:
+   clickable artifact elements that spawn an "edit this" card — pointing-at-the-artifact without
+   building a full visual editor.
+
+8. **Layout: side-by-side split** — cards left (~40%), artifact right (~60%), independent scroll;
+   collapses to tabs on narrow width. Side-by-side is what makes the live preview worth having
+   (answer a card → watch the artifact change).
+
+### Build order for the restructure
+
+Engine work only (the driver suite has its own plan in `../feature-lifecycle-suite.md`):
+
+1. Add the artifact pane + `tt artifact` / `POST /artifact`; render markdown + Mermaid in a
+   side-by-side pane.
+2. Switch export to save the live artifact verbatim (kill approve-time synthesis).
+3. Demote `SKILL.md` → the engine is non-invocable; `ENGINE.md` is the contract drivers program
+   against. Keep the existing card/wait/resume machinery untouched.
+
 ## Scope
 
 ### In scope (v1)
@@ -220,18 +299,23 @@ The motivating scenario: start a grill, join a 1-hour call, come back, lose noth
 
 ## File layout (progressive disclosure)
 
-Following the `write-a-skill` discipline — SKILL.md stays under ~100 lines; detail lives one
-level deep.
+Engine dir holds **engine-only** files (skill-agnostic). Driver skills live in their own sibling
+dirs; their specs are captured in `../feature-lifecycle-suite.md`, not here.
 
 ```
-think-through/
-├── SKILL.md            # agent operating manual: model, process, rules (short)
+think-through/                  # the engine (not user-invocable)
+├── ENGINE.md           # the contract a driving skill programs against (skill-agnostic)
 ├── DESIGN.md           # this file — rationale / decision record
 ├── PROTOCOL.md         # wire contract: tt commands, node payload, endpoints, cursor
-├── think-through.mjs   # the `tt` helper CLI (to build)
-├── server.mjs          # node stdlib server (to build)
-└── page/               # the HTML living-document UI (to build)
+├── think-through.mjs   # the `tt` helper CLI
+├── server.mjs          # node stdlib server
+├── page/               # the side-by-side cards + artifact-pane UI
+└── SKILL.md            # v1 manual — superseded by ENGINE.md when the engine goes non-invocable
 ```
+
+The v1 standalone `SKILL.md` stays until the restructure build lands, then is removed (engine is
+not invoked directly). Driver skills (`explore-idea`, `define-architecture`, `create-tickets`)
+each get their own dir + `SKILL.md` at build time.
 
 ## Open questions
 
