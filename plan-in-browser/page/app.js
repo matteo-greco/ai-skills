@@ -6,6 +6,8 @@
   const expandedArtifacts = new Set();
   const artifactViews = new Map();
   let lastSignature = "";
+  let sessionTerminal = false;
+  let pollTimer;
 
   const element = (tag, className, text) => {
     const node = document.createElement(tag);
@@ -35,12 +37,15 @@
       document.querySelector("#banner").classList.remove("visible");
       document.querySelector("#topic").textContent = state.topic;
       document.querySelector("#status").textContent = state.status;
+      sessionTerminal = state.status !== "live";
+      if (sessionTerminal && pollTimer) clearInterval(pollTimer);
       const nextSignature = signature(state);
       if (nextSignature !== lastSignature) {
         lastSignature = nextSignature;
         render(state);
       }
     } catch {
+      if (sessionTerminal) return;
       document.querySelector("#banner").classList.add("visible");
       document.querySelector("#status").textContent = "Offline";
     }
@@ -305,4 +310,4 @@
   };
 
   tick();
-  setInterval(tick, 1000);
+  pollTimer = setInterval(tick, 1000);

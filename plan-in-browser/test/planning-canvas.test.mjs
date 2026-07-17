@@ -319,6 +319,29 @@ test("the single agent cursor does not replay delivered events", { timeout: 10_0
   }
 });
 
+test("the browser can observe closure before the runtime stops", { timeout: 10_000 }, async () => {
+  const home = await mkdtemp(join(tmpdir(), "planning-canvas-close-visible-"));
+  const env = { ...process.env, PLANNING_CANVAS_HOME: home, PLANNING_CANVAS_NO_OPEN: "1" };
+  let sessionId;
+
+  try {
+    const started = runCli(["start", "--topic", "Visible closure"], env);
+    sessionId = started.sessionId;
+    const browserUrl = new URL(started.url);
+    runCli(["close", "--session", sessionId], env);
+
+    const response = await fetch(`${browserUrl.origin}/state`, {
+      headers: { "x-planning-canvas-token": browserUrl.searchParams.get("token") },
+    });
+    const state = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(state.status, "closed");
+  } finally {
+    if (sessionId) spawnSync(process.execPath, [cli, "close", "--session", sessionId], { env });
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
 test("runs a canvas question through the HTTP server", { timeout: 10_000 }, async () => {
   const home = await mkdtemp(join(tmpdir(), "planning-canvas-"));
   const env = { ...process.env, PLANNING_CANVAS_HOME: home, PLANNING_CANVAS_NO_OPEN: "1" };

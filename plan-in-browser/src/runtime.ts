@@ -63,6 +63,7 @@ const token = option("--token");
 const dir = option("--dir");
 const topic = option("--topic") || "Planning session";
 const MAX_ARTIFACT_BYTES = 512 * 1024;
+const CLOSE_GRACE_MS = 1500;
 const configuredIdleMs = Number(process.env.PLANNING_CANVAS_IDLE_MS);
 const IDLE_MS = Number.isFinite(configuredIdleMs) && configuredIdleMs > 0
   ? configuredIdleMs
@@ -410,8 +411,10 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === "POST" && url.pathname === "/close") {
+    state.status = state.status === "cancelled" ? "cancelled" : "closed";
+    persist();
     sendJson(res, { ok: true });
-    setImmediate(() => shutdown("closed"));
+    setTimeout(() => shutdown("closed", true), CLOSE_GRACE_MS).unref();
     return;
   }
 
@@ -428,13 +431,13 @@ server.listen(0, "127.0.0.1", () => {
   process.stdout.write(`${JSON.stringify({ port: address.port })}\n`);
 });
 
-function shutdown(reason: string = "closed") {
+function shutdown(reason: string = "closed", stateAlreadyPersisted = false) {
   if (shuttingDown) return;
   shuttingDown = true;
   state.status = state.status === "cancelled" ? "cancelled" : reason;
   for (const { watcher } of artifactWatchers.values()) watcher.close();
   artifactWatchers.clear();
-  persist();
+  if (!stateAlreadyPersisted) persist();
   const waiterEvent = reason === "idle" ? { type: "idle", reason: "idle" } : { type: "cancel" };
   for (const waiter of [...waiters]) settle(waiter, waiterEvent);
   server.close(() => process.exit(0));
