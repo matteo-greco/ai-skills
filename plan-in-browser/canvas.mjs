@@ -83,6 +83,7 @@ function request(registry, method, path, body, signal, timeoutMs) {
 }
 
 function openBrowser(url) {
+  if (process.env.PLANNING_CANVAS_NO_OPEN === "1") return;
   const [program, args] =
     process.platform === "darwin"
       ? ["open", [url]]

@@ -245,7 +245,7 @@ const server = http.createServer(async (req, res) => {
     const page = readFileSync(join(here, "page", "index.html"));
     res.writeHead(200, {
       "content-type": "text/html; charset=utf-8",
-      "content-security-policy": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'",
+      "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'",
       "referrer-policy": "no-referrer",
       "x-content-type-options": "nosniff",
     });
@@ -253,12 +253,13 @@ const server = http.createServer(async (req, res) => {
   }
 
   const pageAssets = {
-    "/assets/highlight.min.js": ["highlight.min.js", "text/javascript; charset=utf-8"],
-    "/assets/highlight-github.min.css": ["highlight-github.min.css", "text/css; charset=utf-8"],
+    "/assets/app.js": ["app.js", "text/javascript; charset=utf-8"],
+    "/assets/highlight.min.js": ["vendor/highlight.min.js", "text/javascript; charset=utf-8"],
+    "/assets/highlight-github.min.css": ["vendor/highlight-github.min.css", "text/css; charset=utf-8"],
   };
   if (req.method === "GET" && pageAssets[url.pathname]) {
     const [filename, contentType] = pageAssets[url.pathname];
-    const asset = readFileSync(join(here, "page", "vendor", filename));
+    const asset = readFileSync(join(here, "page", filename));
     res.writeHead(200, {
       "content-type": contentType,
       "cache-control": "public, max-age=86400",

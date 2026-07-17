@@ -1,5 +1,7 @@
 # AI Skills
 
+[![CI](https://github.com/matteo-greco/ai-skills/actions/workflows/ci.yml/badge.svg)](https://github.com/matteo-greco/ai-skills/actions/workflows/ci.yml)
+
 Small, differentiated additions to [Matt Pocock's engineering skills](https://github.com/mattpocock/skills).
 
 Matt's repository owns the general engineering workflow: grilling, specs, tickets, implementation, TDD, code review, triage, debugging, prototyping, and architecture. This repository adds browser-based planning, activity recaps, and specialist GDPR audit verification.
@@ -111,3 +113,14 @@ Use `wayfinder` only when the decisions cannot fit in one session. It maps and r
 This repository intentionally does not maintain local versions of general-purpose skills such as TDD, code review, specs, ticket creation, triage, debugging, refactoring, or ADR creation. Install and update [mattpocock/skills](https://github.com/mattpocock/skills) for those capabilities.
 
 If older versions of this repository left global `tdd`, `code-review`, `spec`, or similar skills installed, remove those stale copies before installing Matt's versions so they cannot shadow the upstream skills.
+
+## Development
+
+The executable parts of `plan-in-browser` require Node.js 22 or newer. Install the development dependencies and run the same checks used by CI:
+
+```bash
+npm ci
+npm run check
+```
+
+`npm run check` runs ESLint over the JavaScript and TypeScript sources, type-checks the Pi extension, and executes the Node.js test suite. GitHub Actions runs it for every push and pull request.
