@@ -6,8 +6,8 @@ import { fileURLToPath } from "node:url";
 import { afterEach, test } from "node:test";
 import { spawnSync } from "node:child_process";
 
-const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const cli = join(repositoryRoot, "plan-in-browser", "resolve-skill.mjs");
+const skillRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const cli = join(skillRoot, "resolve-skill.mjs");
 const temporaryDirectories = [];
 
 afterEach(async () => {

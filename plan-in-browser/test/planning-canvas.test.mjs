@@ -6,8 +6,8 @@ import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { spawn, spawnSync } from "node:child_process";
 
-const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const cli = join(repositoryRoot, "plan-in-browser", "canvas.mjs");
+const skillRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const cli = join(skillRoot, "canvas.mjs");
 
 function runCli(args, env) {
   const result = spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env });

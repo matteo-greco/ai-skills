@@ -123,4 +123,4 @@ npm ci
 npm run check
 ```
 
-`npm run check` runs ESLint over the JavaScript and TypeScript sources, type-checks the Pi extension, and executes the Node.js test suite. GitHub Actions runs it for every push and pull request.
+`npm run check` runs ESLint over the JavaScript and TypeScript sources, type-checks the Pi extension, and executes the Node.js test suite. Tests live in `test/` inside each non-hidden root directory and use the `*.test.mjs` suffix. GitHub Actions runs the checks for every push and pull request.
