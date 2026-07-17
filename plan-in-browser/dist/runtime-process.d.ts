@@ -2,7 +2,7 @@ import { type ChildProcess } from "node:child_process";
 export type PlanningRuntimeStart = {
     sessionId: string;
     token: string;
-    dir: string;
+    sessionDir: string;
     topic: string;
     cwd: string;
 };

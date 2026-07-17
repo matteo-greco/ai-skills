@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 export type PlanningRuntimeStart = {
   sessionId: string;
   token: string;
-  dir: string;
+  sessionDir: string;
   topic: string;
   cwd: string;
 };
@@ -29,7 +29,7 @@ export class ChildProcessPlanningRuntime implements PlanningRuntime {
       "--token",
       input.token,
       "--dir",
-      input.dir,
+      input.sessionDir,
       "--topic",
       input.topic,
     ];

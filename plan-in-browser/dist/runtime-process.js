@@ -12,7 +12,7 @@ export class ChildProcessPlanningRuntime {
             "--token",
             input.token,
             "--dir",
-            input.dir,
+            input.sessionDir,
             "--topic",
             input.topic,
         ];

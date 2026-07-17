@@ -92,7 +92,7 @@ export class PlanningSessionClient {
     async spawnRuntime(sessionId, token, topic) {
         const { dir, registry: registryFile } = this.paths(sessionId);
         mkdirSync(dir, { recursive: true, mode: 0o700 });
-        const connection = await this.runtime.start({ sessionId, token, dir, topic, cwd: this.cwd });
+        const connection = await this.runtime.start({ sessionId, token, sessionDir: dir, topic, cwd: this.cwd });
         let previous = {};
         if (existsSync(registryFile)) {
             try {
