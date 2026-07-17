@@ -63,7 +63,9 @@ browser canvas and blocks until the user answers. Dispatch its result:
 - `cancel`: call `planning_canvas_close` and stop without pretending the plan completed.
 - `timeout`: call `planning_canvas` again with the same active question to resume waiting.
 
-When the source workflow is complete, call `planning_canvas_close`.
+When the source workflow is complete, call `planning_canvas_close`. The local canvas server also
+shuts itself down after two hours without a browser page load or state poll, preventing abandoned
+sessions from leaving orphan processes.
 
 ### Live artifacts
 

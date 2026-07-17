@@ -33,6 +33,7 @@ type CanvasEvent = {
   questionId?: string;
   selectedOptionIds?: string[];
   note?: string;
+  reason?: string;
   url?: string;
 };
 
@@ -120,7 +121,9 @@ export default function planningCanvas(pi: ExtensionAPI) {
         event.type === "answer" || event.type === "edit"
           ? `User ${event.type === "edit" ? "revised" : "answered"} ${event.questionId}: selected ${JSON.stringify(event.selectedOptionIds || [])}${event.note ? `; note: ${event.note}` : ""}`
           : event.type === "cancel"
-            ? "User cancelled the browser planning session."
+            ? event.reason === "idle"
+              ? "Planning canvas closed after two hours without browser activity."
+              : "User cancelled the browser planning session."
             : JSON.stringify(event);
       return { content: [{ type: "text", text: summary }], details: { ...event, url } };
     },

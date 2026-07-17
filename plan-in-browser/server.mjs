@@ -18,6 +18,10 @@ const dir = option("--dir");
 const registryFile = option("--registry");
 const topic = option("--topic") || "Planning session";
 const MAX_ARTIFACT_BYTES = 512 * 1024;
+const configuredIdleMs = Number(process.env.PLANNING_CANVAS_IDLE_MS);
+const IDLE_MS = Number.isFinite(configuredIdleMs) && configuredIdleMs > 0
+  ? configuredIdleMs
+  : 2 * 60 * 60 * 1000;
 if (!sessionId || !token || !dir || !registryFile) {
   throw new Error("missing --session, --token, --dir, or --registry");
 }
@@ -46,6 +50,8 @@ state.cwd ||= process.cwd();
 
 const waiters = new Set();
 const artifactWatchers = new Map();
+let lastBrowserActivity = Date.now();
+let shuttingDown = false;
 const nodeById = (id) => state.nodes.find((node) => node.id === id);
 const firstEventAfter = (cursor) => state.events.find((event) => event.seq > cursor);
 
@@ -173,6 +179,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === "GET" && url.pathname === "/") {
+    lastBrowserActivity = Date.now();
     const page = readFileSync(join(here, "page", "index.html"));
     res.writeHead(200, {
       "content-type": "text/html; charset=utf-8",
@@ -186,6 +193,7 @@ const server = http.createServer(async (req, res) => {
   if (!authorized(req, url)) return sendJson(res, { error: "unauthorized" }, 401);
 
   if (req.method === "GET" && url.pathname === "/state") {
+    lastBrowserActivity = Date.now();
     return sendJson(res, {
       sessionId: state.sessionId,
       topic: state.topic,
@@ -300,15 +308,35 @@ server.listen(0, "127.0.0.1", () => {
   renameSync(temporary, registryFile);
 });
 
-function shutdown() {
-  state.status = state.status === "cancelled" ? "cancelled" : "closed";
+function markRegistryStatus(status) {
+  if (!existsSync(registryFile)) return;
+  try {
+    const registry = JSON.parse(readFileSync(registryFile, "utf8"));
+    const temporary = `${registryFile}.tmp`;
+    writeFileSync(temporary, JSON.stringify({ ...registry, status }, null, 2), { mode: 0o600 });
+    renameSync(temporary, registryFile);
+  } catch {
+    // Session state still records the shutdown if the registry cannot be updated.
+  }
+}
+
+function shutdown(reason = "closed") {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  state.status = state.status === "cancelled" ? "cancelled" : reason;
   for (const { watcher } of artifactWatchers.values()) watcher.close();
   artifactWatchers.clear();
   persist();
-  for (const waiter of [...waiters]) settle(waiter, { type: "cancel" });
+  markRegistryStatus(state.status);
+  const waiterEvent = reason === "idle" ? { type: "cancel", reason: "idle" } : { type: "cancel" };
+  for (const waiter of [...waiters]) settle(waiter, waiterEvent);
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 500).unref();
 }
 
-process.on("SIGTERM", shutdown);
-process.on("SIGINT", shutdown);
+setInterval(() => {
+  if (Date.now() - lastBrowserActivity >= IDLE_MS) shutdown("idle");
+}, Math.min(60_000, IDLE_MS)).unref();
+
+process.on("SIGTERM", () => shutdown());
+process.on("SIGINT", () => shutdown());
