@@ -65,8 +65,31 @@
     .artifact-path { min-width:0; flex:1; }
     .artifact-language { flex:0 0 auto; color:var(--muted); font:500 11px/1.2 ui-sans-serif,system-ui,sans-serif; letter-spacing:.08em; text-transform:uppercase; }
     .artifact-error { padding:12px 14px; border-top:1px solid var(--line); color:#b91c1c; background:#fef2f2; }
+    .artifact-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; border-top:1px solid var(--line); padding:8px 12px; background:#fafaf9; }
+    .artifact-view-options { display:flex; gap:2px; padding:2px; border:1px solid var(--line); border-radius:7px; background:#fff; }
+    button.artifact-view { padding:5px 9px; border-radius:5px; color:var(--muted); background:transparent; font-size:12px; font-weight:600; }
+    button.artifact-view.active { color:#3730a3; background:var(--accent-soft); }
+    .diff-summary { color:var(--muted); font-size:12px; }
+    .diff-summary .additions { color:#047857; }
+    .diff-summary .deletions { color:#b91c1c; }
     pre { max-height:70vh; margin:0; overflow:auto; border-top:1px solid var(--line); padding:16px; background:#fafaf9; color:#292524; font:13px/1.55 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace; tab-size:2; white-space:pre; }
+    pre.artifact-file { border-top:0; }
     pre code.hljs { padding:0; background:transparent; overflow:visible; }
+    .diff-scroll { max-height:70vh; overflow:auto; background:#fff; font:12.5px/1.55 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace; tab-size:2; }
+    .diff-hunk { width:max-content; min-width:100%; }
+    .diff-hunk + .diff-hunk { border-top:1px solid #d6d3d1; }
+    .diff-hunk-header { position:sticky; left:0; padding:7px 12px; color:#4338ca; background:#eef2ff; border-bottom:1px solid #e0e7ff; white-space:pre; }
+    .diff-line { display:grid; grid-template-columns:44px 44px 22px minmax(max-content,1fr); min-height:20px; }
+    .diff-line.context { background:#fff; }
+    .diff-line.addition { background:#ecfdf5; }
+    .diff-line.deletion { background:#fff1f2; }
+    .diff-line.note { color:var(--muted); background:#fafaf9; }
+    .diff-line-number { padding:0 7px; color:#a8a29e; border-right:1px solid rgb(120 113 108 / .14); text-align:right; user-select:none; }
+    .diff-marker { color:#a8a29e; text-align:center; user-select:none; }
+    .diff-line.addition .diff-marker { color:#047857; }
+    .diff-line.deletion .diff-marker { color:#b91c1c; }
+    .diff-code { min-width:0; padding:0 12px 0 4px; color:#292524; background:transparent; white-space:pre; }
+    .diff-code.hljs { padding:0 12px 0 4px; background:transparent; overflow:visible; }
     @media (prefers-reduced-motion:reduce) { .spinner { animation-duration:1.8s; } }
     @media (max-width:800px) {
       main { width:min(100% - 20px,780px); padding-top:28px; }
@@ -110,6 +133,7 @@
   const artifactList = document.querySelector("#artifact-list");
   const editing = new Set();
   const expandedArtifacts = new Set();
+  const artifactViews = new Map();
   let lastSignature = "";
 
   const element = (tag, className, text) => {
@@ -198,6 +222,103 @@
     return language && window.hljs?.getLanguage(language) ? language : undefined;
   }
 
+  function highlightedCode(content, language, className = "") {
+    const classes = [className, language ? `hljs language-${language}` : ""].filter(Boolean).join(" ");
+    const code = element("code", classes, content);
+    if (language) code.innerHTML = window.hljs.highlight(content, { language, ignoreIllegals:true }).value;
+    return code;
+  }
+
+  function fileView(artifact, language, beneathToolbar) {
+    const pre = element("pre", beneathToolbar ? "artifact-file" : "");
+    pre.append(highlightedCode(artifact.content || "", language));
+    return pre;
+  }
+
+  function parseDiffHunks(text) {
+    const hunks = [];
+    let hunk;
+    let oldLine = 0;
+    let newLine = 0;
+    for (const line of text.split("\n")) {
+      const header = line.match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$/);
+      if (header) {
+        oldLine = Number(header[1]);
+        newLine = Number(header[3]);
+        hunk = { header:line, lines:[] };
+        hunks.push(hunk);
+        continue;
+      }
+      if (!hunk) continue;
+      const marker = line[0];
+      if (marker === "\\") {
+        hunk.lines.push({ kind:"note", marker:"\\", content:line.slice(1) });
+        continue;
+      }
+      if (marker !== " " && marker !== "+" && marker !== "-") continue;
+      const kind = marker === "+" ? "addition" : marker === "-" ? "deletion" : "context";
+      const oldNumber = marker === "+" ? undefined : oldLine++;
+      const newNumber = marker === "-" ? undefined : newLine++;
+      hunk.lines.push({ kind, marker, content:line.slice(1), oldNumber, newNumber });
+    }
+    return hunks;
+  }
+
+  function diffView(artifact, language) {
+    const scroll = element("div", "diff-scroll");
+    for (const hunk of parseDiffHunks(artifact.diff.text)) {
+      const section = element("section", "diff-hunk");
+      section.append(element("div", "diff-hunk-header", hunk.header));
+      for (const line of hunk.lines) {
+        const row = element("div", `diff-line ${line.kind}`);
+        row.append(
+          element("span", "diff-line-number", line.oldNumber),
+          element("span", "diff-line-number", line.newNumber),
+          element("span", "diff-marker", line.marker),
+          highlightedCode(line.content, line.kind === "note" ? undefined : language, "diff-code"),
+        );
+        section.append(row);
+      }
+      scroll.append(section);
+    }
+    return scroll;
+  }
+
+  function artifactContent(artifact, language) {
+    if (!artifact.diff) return fileView(artifact, language, false);
+
+    const container = element("div");
+    const toolbar = element("div", "artifact-toolbar");
+    const options = element("div", "artifact-view-options");
+    const changes = element("button", "artifact-view", "Changes");
+    const file = element("button", "artifact-view", "File");
+    changes.type = file.type = "button";
+    changes.title = `Working tree diff against ${artifact.diff.against}`;
+    const summary = element("span", "diff-summary");
+    summary.append(
+      element("span", "additions", `+${artifact.diff.additions}`),
+      document.createTextNode(" "),
+      element("span", "deletions", `−${artifact.diff.deletions}`),
+    );
+    options.append(changes, file);
+    toolbar.append(options, summary);
+    const viewer = element("div");
+    container.append(toolbar, viewer);
+
+    const show = view => {
+      artifactViews.set(artifact.id, view);
+      changes.classList.toggle("active", view === "diff");
+      file.classList.toggle("active", view === "file");
+      changes.setAttribute("aria-pressed", String(view === "diff"));
+      file.setAttribute("aria-pressed", String(view === "file"));
+      viewer.replaceChildren(view === "diff" ? diffView(artifact, language) : fileView(artifact, language, true));
+    };
+    changes.onclick = () => show("diff");
+    file.onclick = () => show("file");
+    show(artifactViews.get(artifact.id) || "diff");
+    return container;
+  }
+
   function renderArtifacts(artifacts) {
     artifactList.replaceChildren();
     if (artifacts.length === 0) {
@@ -218,13 +339,7 @@
       if (language) summary.append(element("span", "artifact-language", language));
       details.append(summary);
       if (artifact.error) details.append(element("div", "artifact-error", artifact.error));
-      else {
-        const pre = element("pre");
-        const code = element("code", language ? `hljs language-${language}` : "", artifact.content || "");
-        if (language) code.innerHTML = window.hljs.highlight(artifact.content || "", { language, ignoreIllegals:true }).value;
-        pre.append(code);
-        details.append(pre);
-      }
+      else details.append(artifactContent(artifact, language));
       artifactList.append(details);
     }
   }

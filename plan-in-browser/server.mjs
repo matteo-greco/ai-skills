@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import http from "node:http";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, watch, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -116,6 +117,61 @@ function artifactByPath(path) {
   return state.artifacts.find((artifact) => artifact.path === path);
 }
 
+function runGit(args) {
+  return spawnSync("git", args, {
+    encoding: "utf8",
+    maxBuffer: MAX_ARTIFACT_BYTES * 4,
+    windowsHide: true,
+  });
+}
+
+function countDiffChanges(text) {
+  let additions = 0;
+  let deletions = 0;
+  let inHunk = false;
+  for (const line of text.split("\n")) {
+    if (line.startsWith("@@")) {
+      inHunk = true;
+      continue;
+    }
+    if (!inHunk) continue;
+    if (line.startsWith("+")) additions += 1;
+    else if (line.startsWith("-")) deletions += 1;
+  }
+  return { additions, deletions };
+}
+
+function gitDiffForArtifact(path, hasContent) {
+  const worktree = runGit(["-C", dirname(path), "rev-parse", "--show-toplevel"]);
+  if (worktree.status !== 0) return undefined;
+  const root = worktree.stdout.trim();
+  const displayPath = relative(root, path);
+  if (!displayPath || displayPath === ".." || displayPath.startsWith("../") || displayPath.startsWith("..\\")) {
+    return undefined;
+  }
+
+  const tracked = runGit(["-C", root, "ls-files", "--error-unmatch", "--", displayPath]).status === 0;
+  const hasHead = runGit(["-C", root, "rev-parse", "--verify", "HEAD"]).status === 0;
+  let result;
+  if (tracked && hasHead) {
+    result = runGit(
+      ["-C", root, "diff", "--no-color", "--no-ext-diff", "--no-textconv", "--unified=3", "HEAD", "--", displayPath],
+    );
+    if (result.status !== 0) return undefined;
+  } else if (hasContent) {
+    result = runGit(
+      ["-C", root, "diff", "--no-color", "--no-ext-diff", "--no-textconv", "--unified=3", "--no-index", "--", "/dev/null", displayPath],
+    );
+    if (result.status !== 0 && result.status !== 1) return undefined;
+  } else {
+    return undefined;
+  }
+
+  const text = result.stdout;
+  if (!text.includes("@@")) return undefined;
+  return { text, ...countDiffChanges(text), against: tracked && hasHead ? "HEAD" : "/dev/null" };
+}
+
 function refreshArtifact(artifact, shouldPersist = true) {
   let content;
   let error;
@@ -132,9 +188,15 @@ function refreshArtifact(artifact, shouldPersist = true) {
     error = cause instanceof Error ? cause.message : String(cause);
   }
 
-  if (artifact.content === content && artifact.error === error) return false;
+  const diff = gitDiffForArtifact(artifact.path, content !== undefined);
+  const unchangedDiff = artifact.diff?.text === diff?.text
+    && artifact.diff?.additions === diff?.additions
+    && artifact.diff?.deletions === diff?.deletions
+    && artifact.diff?.against === diff?.against;
+  if (artifact.content === content && artifact.error === error && unchangedDiff) return false;
   artifact.content = content;
   artifact.error = error;
+  artifact.diff = diff;
   artifact.revision = (artifact.revision || 0) + 1;
   if (shouldPersist) persist();
   return true;

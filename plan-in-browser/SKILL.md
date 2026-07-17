@@ -80,7 +80,10 @@ sessions from leaving orphan processes.
 
 While an extension-backed canvas is active, successful `write` and `edit` calls are automatically
 shown as live, read-only artifacts in the browser. The canvas lists each changed local text file
-once and watches it for later changes. Artifact display is observational: keep following the source
+once and watches it for later changes. Registered files in a Git worktree default to a
+syntax-highlighted working-tree diff against `HEAD`; untracked files are shown as entirely added,
+and non-Git files use the full-file view. The canvas does not list other dirty files that the
+planning session never touched. Artifact display is observational: keep following the source
 skill's normal rules about what to create or edit.
 
 If the workflow changes a planning artifact through `bash` or another mechanism that bypasses
