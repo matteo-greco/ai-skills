@@ -28,7 +28,7 @@ npx skills@latest add matteo-greco/ai-skills -g -s '*' -y
 Update by rerunning the install commands. Uninstall this repository's skills with:
 
 ```bash
-npx skills remove -g think-through plan-in-browser gdpr-audit-verify recap
+npx skills remove -g plan-in-browser gdpr-audit-verify recap
 ```
 
 ## Recommended engineering flow
@@ -103,7 +103,6 @@ Use `wayfinder` only when the decisions cannot fit in one session. It maps and r
 ## Skills in this repository
 
 - **plan-in-browser** — Run any installed planning or grilling skill unchanged while routing every human decision through an interactive browser canvas. Designed to wrap Matt's `grill-with-docs`, `grill-me`, `grilling`, and `wayfinder` skills.
-- **think-through** — Earlier standalone browser decision-tree workflow. Retained temporarily while `plan-in-browser` replaces it.
 - **recap** — Gather git activity and connected PM tickets, detect the latest work burst, and render a terse 3–5 bullet executive brief for standup or Slack.
 - **gdpr-audit-verify** — Reproduce external GDPR, TDDDG, and ePrivacy audit claims in a real browser and classify them against EU and German rules and CJEU case law.
 
