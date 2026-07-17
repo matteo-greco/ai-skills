@@ -45,7 +45,7 @@ function writeRegistry(sessionId, registry) {
   renameSync(temporary, file);
 }
 
-function request(registry, method, path, body, signal) {
+function request(registry, method, path, body, signal, timeoutMs) {
   return new Promise((resolve, reject) => {
     const data = body === undefined ? undefined : JSON.stringify(body);
     const req = http.request(
@@ -76,6 +76,7 @@ function request(registry, method, path, body, signal) {
       },
     );
     req.on("error", reject);
+    if (timeoutMs) req.setTimeout(timeoutMs, () => req.destroy(new Error("request timed out")));
     if (data) req.write(data);
     req.end();
   });
@@ -96,14 +97,9 @@ function openBrowser(url) {
   }
 }
 
-async function start() {
-  mkdirSync(root, { recursive: true, mode: 0o700 });
-  const topic = option("--topic") || "Planning session";
-  const sessionId = `pc-${Date.now().toString(36)}-${randomBytes(3).toString("hex")}`;
-  const token = randomBytes(24).toString("base64url");
+async function spawnServer(sessionId, token, topic) {
   const { dir, registry } = paths(sessionId);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
-
   const child = spawn(
     process.execPath,
     [
@@ -123,22 +119,60 @@ async function start() {
   );
   child.unref();
 
-  let state;
   for (let attempt = 0; attempt < 100; attempt++) {
     await sleep(50);
     if (!existsSync(registry)) continue;
     try {
-      state = JSON.parse(readFileSync(registry, "utf8"));
-      if (state.port) break;
+      const current = JSON.parse(readFileSync(registry, "utf8"));
+      if (current.port && current.pid === child.pid) return current;
     } catch {
       // Atomic rename makes this unlikely; retry if observed.
     }
   }
-  if (!state?.port) fail("planning canvas server failed to start");
+  fail("planning canvas server failed to start");
+}
 
-  const url = `http://127.0.0.1:${state.port}/?token=${encodeURIComponent(token)}`;
+function browserUrl(registry) {
+  return `http://127.0.0.1:${registry.port}/?token=${encodeURIComponent(registry.token)}`;
+}
+
+async function start() {
+  mkdirSync(root, { recursive: true, mode: 0o700 });
+  const topic = option("--topic") || "Planning session";
+  const sessionId = `pc-${Date.now().toString(36)}-${randomBytes(3).toString("hex")}`;
+  const token = randomBytes(24).toString("base64url");
+  const registry = await spawnServer(sessionId, token, topic);
+  const url = browserUrl(registry);
   openBrowser(url);
   output({ type: "started", sessionId, topic, url });
+}
+
+async function resume() {
+  const sessionId = option("--session") || fail("resume requires --session");
+  const { dir } = paths(sessionId);
+  let registry = readRegistry(sessionId);
+  const stateFile = join(dir, "state.json");
+  if (!existsSync(stateFile)) fail(`planning canvas state not found: ${sessionId}`);
+  const persisted = JSON.parse(readFileSync(stateFile, "utf8"));
+  if (["closed", "cancelled"].includes(persisted.status)) {
+    fail(`planning canvas session is ${persisted.status} and cannot be resumed`);
+  }
+
+  let restarted = false;
+  try {
+    await request(registry, "GET", "/state", undefined, undefined, 750);
+  } catch {
+    registry = await spawnServer(
+      sessionId,
+      registry.token,
+      persisted.topic || registry.topic || "Planning session",
+    );
+    restarted = true;
+  }
+
+  const url = browserUrl(registry);
+  openBrowser(url);
+  output({ type: "resumed", sessionId, topic: persisted.topic, url, restarted });
 }
 
 async function readQuestion() {
@@ -197,9 +231,9 @@ async function inspect() {
   output(await request(readRegistry(sessionId), "GET", "/state"));
 }
 
-const commands = { start, ask, wait, artifact, close, state: inspect };
+const commands = { start, resume, ask, wait, artifact, close, state: inspect };
 if (!commands[command]) {
-  fail("usage: canvas.mjs <start|ask|wait|artifact|state|close>");
+  fail("usage: canvas.mjs <start|resume|ask|wait|artifact|state|close>");
 }
 
 commands[command]().catch((error) => fail(error.stack || error.message || String(error)));

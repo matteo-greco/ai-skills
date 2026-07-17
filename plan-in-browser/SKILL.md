@@ -60,8 +60,17 @@ browser canvas and blocks until the user answers. Dispatch its result:
 
 - `answer`: continue the source skill using `selectedOptionIds` and `note` as the user's response.
 - `edit`: reconsider the revised decision and any later decisions it invalidates, then continue.
+- `idle`: the server paused after two hours without browser activity; do not close it or pretend the
+  plan completed. On the user's next continuation, call `planning_canvas_resume` and re-ask the
+  active question.
 - `cancel`: call `planning_canvas_close` and stop without pretending the plan completed.
 - `timeout`: call `planning_canvas` again with the same active question to resume waiting.
+
+The extension records the active canvas in the Pi session and normally recovers it automatically
+after `/reload`, `/resume`, a clean Pi restart, an idle shutdown, or a crashed canvas server. If
+automatic recovery fails, call `planning_canvas_resume` (or the user can run
+`/planning-canvas-resume`) before continuing. Retrying a question after a server failure also
+restarts the persisted canvas automatically.
 
 When the source workflow is complete, call `planning_canvas_close`. The local canvas server also
 shuts itself down after two hours without a browser page load or state poll, preventing abandoned
@@ -88,6 +97,12 @@ blocking shell tool:
 
    ```bash
    node "$SKILL_DIR/canvas.mjs" start --topic "<short topic>"
+   ```
+
+   If the process is interrupted, reopen a live server or restart it from persisted state:
+
+   ```bash
+   node "$SKILL_DIR/canvas.mjs" resume --session <sessionId>
    ```
 
 2. Write each question payload to a temporary JSON file, then block for the browser answer:

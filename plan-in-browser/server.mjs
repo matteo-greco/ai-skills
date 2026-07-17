@@ -299,10 +299,31 @@ server.listen(0, "127.0.0.1", () => {
     ensureArtifactWatcher(artifact);
   }
   persist();
+  let previousRegistry = {};
+  if (existsSync(registryFile)) {
+    try {
+      previousRegistry = JSON.parse(readFileSync(registryFile, "utf8"));
+    } catch {
+      // A corrupt registry is replaced from the recovered session state.
+    }
+  }
   const temporary = `${registryFile}.tmp`;
   writeFileSync(
     temporary,
-    JSON.stringify({ sessionId, topic: state.topic, token, port: address.port, pid: process.pid, cursor: 0 }, null, 2),
+    JSON.stringify(
+      {
+        ...previousRegistry,
+        sessionId,
+        topic: state.topic,
+        token,
+        port: address.port,
+        pid: process.pid,
+        cursor: previousRegistry.cursor || 0,
+        status: "live",
+      },
+      null,
+      2,
+    ),
     { mode: 0o600 },
   );
   renameSync(temporary, registryFile);
@@ -328,7 +349,7 @@ function shutdown(reason = "closed") {
   artifactWatchers.clear();
   persist();
   markRegistryStatus(state.status);
-  const waiterEvent = reason === "idle" ? { type: "cancel", reason: "idle" } : { type: "cancel" };
+  const waiterEvent = reason === "idle" ? { type: "idle", reason: "idle" } : { type: "cancel" };
   for (const waiter of [...waiters]) settle(waiter, waiterEvent);
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 500).unref();
