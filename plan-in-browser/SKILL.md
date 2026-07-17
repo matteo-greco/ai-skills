@@ -65,6 +65,18 @@ browser canvas and blocks until the user answers. Dispatch its result:
 
 When the source workflow is complete, call `planning_canvas_close`.
 
+### Live artifacts
+
+While an extension-backed canvas is active, successful `write` and `edit` calls are automatically
+shown as live, read-only artifacts in the browser. The canvas lists each changed local text file
+once and watches it for later changes. Artifact display is observational: keep following the source
+skill's normal rules about what to create or edit.
+
+If the workflow changes a planning artifact through `bash` or another mechanism that bypasses
+`write` and `edit`, call `planning_canvas_artifact` with its path after the file exists. Do not
+register files that were only read or explored. Remote artifacts such as issue-tracker bodies are
+not rendered unless they also have a local file representation.
+
 ### Portable fallback: shell CLI
 
 If `planning_canvas` is unavailable, use the bundled CLI. This works in agent harnesses with a
@@ -82,13 +94,20 @@ blocking shell tool:
    node "$SKILL_DIR/canvas.mjs" ask --session <sessionId> --file <question.json>
    ```
 
-3. If an edit event arrives while another question remains active, handle it and then wait again:
+3. Register every local artifact after its first mutation. Unlike the extension, the portable
+   fallback cannot observe `write` and `edit` calls automatically:
+
+   ```bash
+   node "$SKILL_DIR/canvas.mjs" artifact --session <sessionId> --path <absolute-path>
+   ```
+
+4. If an edit event arrives while another question remains active, handle it and then wait again:
 
    ```bash
    node "$SKILL_DIR/canvas.mjs" wait --session <sessionId>
    ```
 
-4. On completion or cancellation:
+5. On completion or cancellation:
 
    ```bash
    node "$SKILL_DIR/canvas.mjs" close --session <sessionId>

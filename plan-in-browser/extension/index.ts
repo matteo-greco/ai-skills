@@ -3,7 +3,7 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { spawn } from "node:child_process";
 import { realpathSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // Resolve symlinks because the extension is commonly linked into ~/.pi/agent/extensions.
@@ -62,6 +62,26 @@ function runCli(args: string[], signal?: AbortSignal): Promise<CanvasEvent> {
 export default function planningCanvas(pi: ExtensionAPI) {
   let sessionId: string | undefined;
   let url: string | undefined;
+  const registeredArtifacts = new Set<string>();
+
+  async function registerArtifact(path: string, cwd: string, title?: string, signal?: AbortSignal) {
+    if (!sessionId) throw new Error("No planning canvas is active.");
+    const absolutePath = resolve(cwd, path);
+    if (registeredArtifacts.has(absolutePath) && !title) return absolutePath;
+    await runCli(
+      [
+        "artifact",
+        "--session",
+        sessionId,
+        "--path",
+        absolutePath,
+        ...(title ? ["--title", title] : []),
+      ],
+      signal,
+    );
+    registeredArtifacts.add(absolutePath);
+    return absolutePath;
+  }
 
   pi.registerTool({
     name: "planning_canvas",
@@ -107,6 +127,29 @@ export default function planningCanvas(pi: ExtensionAPI) {
   });
 
   pi.registerTool({
+    name: "planning_canvas_artifact",
+    label: "Show Planning Artifact",
+    description:
+      "Show a local text artifact in the active browser planning canvas. Use when a planning workflow changes a file through bash or another mechanism that bypasses the write/edit tools.",
+    promptSnippet: "Register a local text artifact for live display in the planning canvas",
+    promptGuidelines: [
+      "When plan-in-browser is active, use planning_canvas_artifact for planning artifacts changed through bash or another mechanism that bypasses write/edit; successful write/edit calls are tracked automatically.",
+    ],
+    parameters: Type.Object({
+      path: Type.String({ description: "Artifact path, absolute or relative to the project directory" }),
+      title: Type.Optional(Type.String({ description: "Optional display title; the relative path is used by default" })),
+    }),
+    executionMode: "sequential",
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+      const absolutePath = await registerArtifact(params.path, ctx.cwd, params.title, signal);
+      return {
+        content: [{ type: "text", text: `Showing planning artifact ${absolutePath}.` }],
+        details: { path: absolutePath, url },
+      };
+    },
+  });
+
+  pi.registerTool({
     name: "planning_canvas_close",
     label: "Close Planning Canvas",
     description: "Close the active browser planning canvas after its source workflow completes or is cancelled.",
@@ -120,11 +163,24 @@ export default function planningCanvas(pi: ExtensionAPI) {
       const closedSession = sessionId;
       sessionId = undefined;
       url = undefined;
+      registeredArtifacts.clear();
       return {
         content: [{ type: "text", text: `Closed planning canvas ${closedSession}.` }],
         details: closed,
       };
     },
+  });
+
+  pi.on("tool_result", async (event, ctx) => {
+    if (!sessionId || event.isError || (event.toolName !== "write" && event.toolName !== "edit")) return;
+    const input = event.input as { path?: unknown };
+    if (typeof input.path !== "string") return;
+    try {
+      await registerArtifact(input.path, ctx.cwd, undefined, ctx.signal);
+    } catch (error) {
+      // Artifact display must never turn a successful file edit into a failed tool call.
+      ctx.ui.notify(`Could not show planning artifact: ${error instanceof Error ? error.message : String(error)}`, "warning");
+    }
   });
 
   pi.on("session_shutdown", async () => {
@@ -136,5 +192,6 @@ export default function planningCanvas(pi: ExtensionAPI) {
     }
     sessionId = undefined;
     url = undefined;
+    registeredArtifacts.clear();
   });
 }

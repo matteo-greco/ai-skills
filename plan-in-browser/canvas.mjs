@@ -172,6 +172,14 @@ async function wait() {
   output(await waitForEvent(sessionId));
 }
 
+async function artifact() {
+  const sessionId = option("--session") || fail("artifact requires --session");
+  const path = option("--path") || fail("artifact requires --path");
+  const title = option("--title");
+  const registered = await request(readRegistry(sessionId), "POST", "/artifact", { path, title });
+  output({ type: "artifact", ...registered });
+}
+
 async function close() {
   const sessionId = option("--session") || fail("close requires --session");
   const registry = readRegistry(sessionId);
@@ -189,9 +197,9 @@ async function inspect() {
   output(await request(readRegistry(sessionId), "GET", "/state"));
 }
 
-const commands = { start, ask, wait, close, state: inspect };
+const commands = { start, ask, wait, artifact, close, state: inspect };
 if (!commands[command]) {
-  fail("usage: canvas.mjs <start|ask|wait|state|close>");
+  fail("usage: canvas.mjs <start|ask|wait|artifact|state|close>");
 }
 
 commands[command]().catch((error) => fail(error.stack || error.message || String(error)));

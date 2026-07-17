@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 import http from "node:http";
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, renameSync, statSync, watch, writeFileSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -17,6 +17,7 @@ const token = option("--token");
 const dir = option("--dir");
 const registryFile = option("--registry");
 const topic = option("--topic") || "Planning session";
+const MAX_ARTIFACT_BYTES = 512 * 1024;
 if (!sessionId || !token || !dir || !registryFile) {
   throw new Error("missing --session, --token, --dir, or --registry");
 }
@@ -28,8 +29,10 @@ let state = {
   topic,
   status: "live",
   nodes: [],
+  artifacts: [],
   events: [],
   seq: 0,
+  cwd: process.cwd(),
 };
 if (existsSync(stateFile)) {
   try {
@@ -38,8 +41,11 @@ if (existsSync(stateFile)) {
     // A corrupt recovery file starts a fresh canvas.
   }
 }
+state.artifacts ||= [];
+state.cwd ||= process.cwd();
 
 const waiters = new Set();
+const artifactWatchers = new Map();
 const nodeById = (id) => state.nodes.find((node) => node.id === id);
 const firstEventAfter = (cursor) => state.events.find((event) => event.seq > cursor);
 
@@ -100,6 +106,64 @@ function authorized(req, url) {
   return req.headers["x-planning-canvas-token"] === token || url.searchParams.get("token") === token;
 }
 
+function artifactByPath(path) {
+  return state.artifacts.find((artifact) => artifact.path === path);
+}
+
+function refreshArtifact(artifact, shouldPersist = true) {
+  let content;
+  let error;
+  try {
+    const stats = statSync(artifact.path);
+    if (!stats.isFile()) throw new Error("Not a regular file");
+    if (stats.size > MAX_ARTIFACT_BYTES) {
+      throw new Error(`File is larger than ${Math.round(MAX_ARTIFACT_BYTES / 1024)} KB`);
+    }
+    const buffer = readFileSync(artifact.path);
+    if (buffer.includes(0)) throw new Error("Binary files cannot be displayed");
+    content = buffer.toString("utf8");
+  } catch (cause) {
+    error = cause instanceof Error ? cause.message : String(cause);
+  }
+
+  if (artifact.content === content && artifact.error === error) return false;
+  artifact.content = content;
+  artifact.error = error;
+  artifact.revision = (artifact.revision || 0) + 1;
+  if (shouldPersist) persist();
+  return true;
+}
+
+function ensureArtifactWatcher(artifact) {
+  const directory = dirname(artifact.path);
+  let entry = artifactWatchers.get(directory);
+  if (entry) {
+    entry.paths.add(artifact.path);
+    return;
+  }
+
+  const paths = new Set([artifact.path]);
+  try {
+    const watcher = watch(directory, (_eventType, filename) => {
+      const changedName = filename ? String(filename) : undefined;
+      for (const path of paths) {
+        if (!changedName || basename(path) === changedName) {
+          const current = artifactByPath(path);
+          if (current) refreshArtifact(current);
+        }
+      }
+    });
+    watcher.on("error", () => {
+      watcher.close();
+      artifactWatchers.delete(directory);
+    });
+    entry = { watcher, paths };
+    artifactWatchers.set(directory, entry);
+  } catch {
+    // The initial content remains visible even if its directory cannot be watched.
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url || "/", "http://127.0.0.1");
 
@@ -127,6 +191,7 @@ const server = http.createServer(async (req, res) => {
       topic: state.topic,
       status: state.status,
       tree: state.nodes,
+      artifacts: state.artifacts,
       cursor: state.seq,
     });
   }
@@ -164,6 +229,32 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, { ok: true, id: question.id });
   }
 
+  if (req.method === "POST" && url.pathname === "/artifact") {
+    const input = await readJson(req);
+    if (typeof input.path !== "string" || !input.path.trim()) {
+      return sendJson(res, { error: "artifact path is required" }, 400);
+    }
+    const path = isAbsolute(input.path) ? resolve(input.path) : resolve(state.cwd, input.path);
+    let artifact = artifactByPath(path);
+    if (!artifact) {
+      const displayPath = relative(state.cwd, path);
+      artifact = {
+        id: `artifact-${state.artifacts.length + 1}`,
+        path,
+        displayPath: displayPath && !displayPath.startsWith("..") ? displayPath : path,
+        title: typeof input.title === "string" && input.title.trim() ? input.title.trim() : undefined,
+        revision: 0,
+      };
+      state.artifacts.push(artifact);
+    } else if (typeof input.title === "string" && input.title.trim()) {
+      artifact.title = input.title.trim();
+    }
+    refreshArtifact(artifact, false);
+    ensureArtifactWatcher(artifact);
+    persist();
+    return sendJson(res, { ok: true, id: artifact.id, path: artifact.path });
+  }
+
   if (req.method === "POST" && url.pathname === "/answer") {
     const { nodeId, selectedOptionIds = [], note = "" } = await readJson(req);
     const node = nodeById(nodeId);
@@ -195,6 +286,10 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(0, "127.0.0.1", () => {
   const address = server.address();
+  for (const artifact of state.artifacts) {
+    refreshArtifact(artifact, false);
+    ensureArtifactWatcher(artifact);
+  }
   persist();
   const temporary = `${registryFile}.tmp`;
   writeFileSync(
@@ -207,6 +302,8 @@ server.listen(0, "127.0.0.1", () => {
 
 function shutdown() {
   state.status = state.status === "cancelled" ? "cancelled" : "closed";
+  for (const { watcher } of artifactWatchers.values()) watcher.close();
+  artifactWatchers.clear();
   persist();
   for (const waiter of [...waiters]) settle(waiter, { type: "cancel" });
   server.close(() => process.exit(0));
