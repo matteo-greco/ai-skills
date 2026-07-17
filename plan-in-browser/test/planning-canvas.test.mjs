@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15,14 +15,22 @@ const sessionTest = (name, run) => test(name, { timeout: 10_000 }, run);
 
 async function createHarness() {
   const root = await mkdtemp(join(tmpdir(), "planning-session-"));
+  const workspace = join(root, "workspace");
+  await mkdir(workspace);
   const openedUrls = [];
   const runtime = new ControlledPlanningRuntime();
-  const client = new PlanningSessionClient({ root, runtime, openBrowser: (url) => openedUrls.push(url) });
+  const client = new PlanningSessionClient({
+    root,
+    cwd: workspace,
+    runtime,
+    openBrowser: (url) => openedUrls.push(url),
+  });
   let sessionId;
 
   return {
     client,
     root,
+    workspace,
     openedUrls,
     async start(topic) {
       const started = await client.start(topic);
@@ -140,6 +148,27 @@ sessionTest("asking after idle recovery delivers the person's answer", async () 
         note: "Ready",
         restarted: true,
       },
+    );
+  } finally {
+    await harness.cleanUp();
+  }
+});
+
+sessionTest("relative artifact paths resolve from the planning workspace", async () => {
+  const harness = await createHarness();
+  try {
+    const artifactPath = join(harness.workspace, "plan.md");
+    const resolvedArtifactPath = join(await realpath(harness.workspace), "plan.md");
+    await writeFile(artifactPath, "# Workspace plan\n");
+    const started = await harness.start("Workspace planning");
+
+    const registered = await harness.client.artifact(started.sessionId, "plan.md");
+    const state = await harness.client.state(started.sessionId);
+
+    assert.deepEqual(registered, { ok: true, id: "artifact-1", path: resolvedArtifactPath });
+    assert.deepEqual(
+      state.artifacts.map(({ path, displayPath, content }) => ({ path, displayPath, content })),
+      [{ path: resolvedArtifactPath, displayPath: "plan.md", content: "# Workspace plan\n" }],
     );
   } finally {
     await harness.cleanUp();
