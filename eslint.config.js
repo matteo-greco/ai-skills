@@ -5,7 +5,7 @@ import tseslint from "typescript-eslint";
 
 export default defineConfig(
   {
-    ignores: ["node_modules/", "plan-in-browser/page/vendor/"],
+    ignores: ["node_modules/", "plan-in-browser/dist/", "plan-in-browser/page/vendor/"],
   },
   eslint.configs.recommended,
   tseslint.configs.recommended,

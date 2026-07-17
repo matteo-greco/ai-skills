@@ -123,4 +123,6 @@ npm ci
 npm run check
 ```
 
-`npm run check` runs ESLint over the JavaScript and TypeScript sources, type-checks the Pi extension, and executes the Node.js test suite. Tests live in `test/` inside each non-hidden root directory and use the `*.test.mjs` suffix. GitHub Actions runs the checks for every push and pull request.
+`npm run check` runs ESLint, rebuilds and verifies the committed `plan-in-browser/dist/` output, type-checks the TypeScript sources, and executes the Node.js test suite. Tests live in `test/` inside each non-hidden root directory and use the `*.test.mjs` suffix. GitHub Actions runs the checks for every push and pull request.
+
+The planning session lifecycle is authored in `plan-in-browser/src/`. Run `npm run build` after changing it; installed skills execute the committed JavaScript in `plan-in-browser/dist/` without requiring a local build.

@@ -7,7 +7,9 @@
     "node": ">=22"
   },
   "scripts": {
-    "check": "npm run lint && npm run typecheck && npm test",
+    "build": "tsc -p plan-in-browser/tsconfig.build.json",
+    "build:check": "npm run build && git diff --exit-code -- plan-in-browser/dist",
+    "check": "npm run lint && npm run build:check && npm run typecheck && npm test",
     "lint": "eslint .",
     "test": "node --test */test/*.test.mjs",
     "typecheck": "tsc --noEmit"

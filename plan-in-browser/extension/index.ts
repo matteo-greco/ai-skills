@@ -1,14 +1,8 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
-import { spawn } from "node:child_process";
-import { realpathSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-
-// Resolve symlinks because the extension is commonly linked into ~/.pi/agent/extensions.
-const here = dirname(realpathSync(fileURLToPath(import.meta.url)));
-const cli = join(here, "..", "canvas.mjs");
+import { resolve } from "node:path";
+import { PlanningSessionClient, type CanvasEvent } from "../dist/session.js";
 
 const OptionSchema = Type.Object({
   id: Type.String({ description: "Stable option identity returned by the canvas" }),
@@ -27,42 +21,9 @@ const QuestionSchema = Type.Object({
   recommendation: Type.Optional(Type.String({ description: "Recommended answer and concise reasoning" })),
 });
 
-type CanvasEvent = {
-  type: "started" | "resumed" | "answer" | "edit" | "idle" | "cancel" | "timeout" | "closed";
-  sessionId?: string;
-  questionId?: string;
-  selectedOptionIds?: string[];
-  note?: string;
-  reason?: string;
-  url?: string;
-  restarted?: boolean;
-};
-
-function runCli(args: string[], signal?: AbortSignal): Promise<CanvasEvent> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [cli, ...args], { stdio: ["ignore", "pipe", "pipe"] });
-    let stdout = "";
-    let stderr = "";
-    const abort = () => child.kill("SIGTERM");
-    signal?.addEventListener("abort", abort, { once: true });
-    child.stdout.on("data", (chunk) => (stdout += chunk));
-    child.stderr.on("data", (chunk) => (stderr += chunk));
-    child.on("error", reject);
-    child.on("close", (code) => {
-      signal?.removeEventListener("abort", abort);
-      if (signal?.aborted) return reject(new Error("Planning canvas question cancelled"));
-      if (code !== 0) return reject(new Error(stderr.trim() || `planning canvas exited ${code}`));
-      try {
-        resolve(JSON.parse(stdout.trim()));
-      } catch {
-        reject(new Error(`Invalid planning canvas response: ${stdout || stderr}`));
-      }
-    });
-  });
-}
-
 export default function planningCanvas(pi: ExtensionAPI) {
   const sessionEntryType = "planning-canvas-session";
+  const client = new PlanningSessionClient();
   let sessionId: string | undefined;
   let recoverableSessionId: string | undefined;
   let url: string | undefined;
@@ -73,8 +34,8 @@ export default function planningCanvas(pi: ExtensionAPI) {
     pi.appendEntry(sessionEntryType, { sessionId, url, status });
   }
 
-  async function resumeSession(id: string, signal?: AbortSignal) {
-    const resumed = await runCli(["resume", "--session", id], signal);
+  async function resumeSession(id: string) {
+    const resumed = await client.resume(id);
     sessionId = id;
     recoverableSessionId = id;
     url = resumed.url;
@@ -86,17 +47,7 @@ export default function planningCanvas(pi: ExtensionAPI) {
     if (!sessionId) throw new Error("No planning canvas is active.");
     const absolutePath = resolve(cwd, path);
     if (registeredArtifacts.has(absolutePath) && !title) return absolutePath;
-    await runCli(
-      [
-        "artifact",
-        "--session",
-        sessionId,
-        "--path",
-        absolutePath,
-        ...(title ? ["--title", title] : []),
-      ],
-      signal,
-    );
+    await client.artifact(sessionId, absolutePath, title, signal);
     registeredArtifacts.add(absolutePath);
     return absolutePath;
   }
@@ -117,7 +68,7 @@ export default function planningCanvas(pi: ExtensionAPI) {
 
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       if (!sessionId) {
-        const started = await runCli(["start", "--topic", params.topic || params.question], signal);
+        const started = await client.start(params.topic || params.question);
         sessionId = started.sessionId;
         recoverableSessionId = sessionId;
         url = started.url;
@@ -129,19 +80,15 @@ export default function planningCanvas(pi: ExtensionAPI) {
       ctx.ui.setWorkingIndicator({ frames: [] });
       let event: CanvasEvent;
       try {
-        const askArgs = ["ask", "--session", sessionId!, "--json", JSON.stringify(params)];
-        try {
-          event = await runCli(askArgs, signal);
-        } catch (error) {
-          if (signal?.aborted) throw error;
-          const resumed = await resumeSession(sessionId!, signal);
-          rememberSession("active");
-          if (resumed.url) ctx.ui.notify(`Recovered planning canvas: ${resumed.url}`, "warning");
-          event = await runCli(askArgs, signal);
-        }
+        event = await client.ask(sessionId!, params, signal);
       } finally {
         ctx.ui.setWorkingIndicator();
         ctx.ui.setStatus("planning-canvas", undefined);
+      }
+      if (event.restarted && event.url) {
+        url = event.url;
+        rememberSession("active");
+        ctx.ui.notify(`Recovered planning canvas: ${event.url}`, "warning");
       }
       const summary =
         event.type === "answer" || event.type === "edit"
@@ -168,7 +115,7 @@ export default function planningCanvas(pi: ExtensionAPI) {
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const target = params.sessionId || sessionId || recoverableSessionId;
       if (!target) throw new Error("No recoverable planning canvas is recorded in this Pi session.");
-      const resumed = await resumeSession(target, signal);
+      const resumed = await resumeSession(target);
       rememberSession("active");
       if (url) ctx.ui.notify(`Planning canvas resumed: ${url}`, "info");
       return {
@@ -212,7 +159,7 @@ export default function planningCanvas(pi: ExtensionAPI) {
       if (!target) {
         return { content: [{ type: "text", text: "No planning canvas is active." }], details: {} };
       }
-      const closed = await runCli(["close", "--session", target]);
+      const closed = await client.close(target);
       sessionId = target;
       const closedSession = target;
       rememberSession("closed");

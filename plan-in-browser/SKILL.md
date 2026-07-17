@@ -102,7 +102,8 @@ blocking shell tool:
    node "$SKILL_DIR/canvas.mjs" start --topic "<short topic>"
    ```
 
-   If the process is interrupted, reopen a live server or restart it from persisted state:
+   Later commands transparently restart a stopped server from persisted state. To proactively reopen
+   the browser without asking a question, run:
 
    ```bash
    node "$SKILL_DIR/canvas.mjs" resume --session <sessionId>
