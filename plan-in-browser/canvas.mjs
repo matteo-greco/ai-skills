@@ -13,7 +13,9 @@ const option = (name) => {
 const client = new PlanningSessionClient({ cwd: process.cwd() });
 
 function output(value) {
-  process.stdout.write(JSON.stringify(value) + "\n");
+  return new Promise((resolve, reject) => {
+    process.stdout.write(JSON.stringify(value) + "\n", (error) => error ? reject(error) : resolve());
+  });
 }
 
 function fail(message) {
@@ -34,30 +36,35 @@ async function readQuestion() {
 
 const commands = {
   async start() {
-    output(await client.start(option("--topic") || "Planning session"));
+    await output(await client.start(option("--topic") || "Planning session"));
   },
   async resume() {
-    output(await client.resume(option("--session") || fail("resume requires --session")));
+    await output(await client.resume(option("--session") || fail("resume requires --session")));
   },
   async ask() {
     const sessionId = option("--session") || fail("ask requires --session");
-    output(await client.ask(sessionId, await readQuestion()));
+    const event = await client.ask(sessionId, await readQuestion());
+    await output(event);
+    client.acknowledge(sessionId, event);
   },
   async wait() {
-    output(await client.wait(option("--session") || fail("wait requires --session")));
+    const sessionId = option("--session") || fail("wait requires --session");
+    const event = await client.wait(sessionId);
+    await output(event);
+    client.acknowledge(sessionId, event);
   },
   async artifact() {
     const sessionId = option("--session") || fail("artifact requires --session");
     const path = option("--path") || fail("artifact requires --path");
     const title = option("--title");
     const registered = await client.artifact(sessionId, path, title);
-    output({ type: "artifact", ...registered });
+    await output({ type: "artifact", ...registered });
   },
   async close() {
-    output(await client.close(option("--session") || fail("close requires --session")));
+    await output(await client.close(option("--session") || fail("close requires --session")));
   },
   async state() {
-    output(await client.state(option("--session") || fail("state requires --session")));
+    await output(await client.state(option("--session") || fail("state requires --session")));
   },
 };
 

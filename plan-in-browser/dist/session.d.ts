@@ -35,14 +35,19 @@ export declare class PlanningSessionClient {
     readonly cwd: string;
     readonly openBrowser: (url: string) => void;
     readonly runtime: PlanningRuntime;
+    private readonly clientId;
     constructor(options?: ClientOptions);
     private paths;
     private readRegistry;
     private writeRegistry;
+    private readPersistedState;
+    private connection;
     private request;
     private browserUrl;
     private spawnRuntime;
-    private readPersistedState;
+    private rejectTerminal;
+    private probe;
+    private withTakeoverLock;
     private ensureLive;
     start(topic?: string): Promise<{
         type: "started";
@@ -53,10 +58,12 @@ export declare class PlanningSessionClient {
     resume(sessionId: string): Promise<{
         type: "resumed";
         sessionId: string;
-        topic: string | undefined;
+        topic: string;
         url: string;
         restarted: boolean;
     }>;
+    private acknowledgePriorDelivery;
+    acknowledge(sessionId: string, event: CanvasEvent): void;
     private waitForEvent;
     ask(sessionId: string, question: Question, signal?: AbortSignal): Promise<CanvasEvent>;
     wait(sessionId: string, signal?: AbortSignal): Promise<CanvasEvent>;

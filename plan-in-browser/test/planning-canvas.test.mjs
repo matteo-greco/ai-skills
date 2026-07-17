@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { access, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -39,6 +39,15 @@ async function createHarness() {
     },
     async idleRuntime() {
       await runtime.idle(sessionId);
+    },
+    hangRuntime() {
+      runtime.hang(sessionId);
+    },
+    async exitRuntime() {
+      await runtime.exit(sessionId);
+    },
+    runtimePid() {
+      return runtime.pid(sessionId);
     },
     async cleanUp() {
       if (sessionId) await client.close(sessionId).catch(() => {});
@@ -99,18 +108,94 @@ function spawnCli(args, env) {
   });
 }
 
-sessionTest("an idle planning session resumes with its topic", async () => {
+sessionTest("runtime inactivity leaves the planning session open and recoverable", async () => {
   const harness = await createHarness();
   try {
     const started = await harness.start("Release planning");
     await harness.idleRuntime();
 
+    const persisted = JSON.parse(await readFile(join(harness.root, started.sessionId, "state.json"), "utf8"));
+    const connection = JSON.parse(await readFile(join(harness.root, started.sessionId, "registry.json"), "utf8"));
     const resumed = await harness.client.resume(started.sessionId);
 
+    assert.equal(persisted.status, "open");
+    assert.equal(connection.status, undefined);
+    assert.equal(connection.topic, undefined);
+    assert.equal(typeof connection.runtimeId, "string");
     assert.deepEqual(
       { topic: resumed.topic, restarted: resumed.restarted },
       { topic: "Release planning", restarted: true },
     );
+  } finally {
+    await harness.cleanUp();
+  }
+});
+
+sessionTest("a failed health probe retires the verified writer before replacement", async () => {
+  const harness = await createHarness();
+  try {
+    const started = await harness.start("Takeover planning");
+    const originalPid = harness.runtimePid();
+    const registryPath = join(harness.root, started.sessionId, "registry.json");
+    const registry = JSON.parse(await readFile(registryPath, "utf8"));
+    await writeFile(registryPath, JSON.stringify({ ...registry, port: 1 }));
+
+    const resumed = await harness.client.resume(started.sessionId);
+
+    assert.equal(resumed.restarted, true);
+    assert.notEqual(harness.runtimePid(), originalPid);
+    assert.throws(() => process.kill(originalPid, 0));
+  } finally {
+    await harness.cleanUp();
+  }
+});
+
+sessionTest("a verified hung writer is forcibly retired before recovery", async () => {
+  const harness = await createHarness();
+  try {
+    const started = await harness.start("Hung runtime planning");
+    const originalPid = harness.runtimePid();
+    harness.hangRuntime();
+
+    const resumed = await harness.client.resume(started.sessionId);
+
+    assert.equal(resumed.restarted, true);
+    assert.notEqual(harness.runtimePid(), originalPid);
+    assert.throws(() => process.kill(originalPid, 0));
+  } finally {
+    await harness.cleanUp();
+  }
+});
+
+sessionTest("concurrent recovery establishes one replacement writer", async () => {
+  const harness = await createHarness();
+  try {
+    const started = await harness.start("Concurrent takeover");
+    harness.hangRuntime();
+
+    const [first, second] = await Promise.all([
+      harness.client.resume(started.sessionId),
+      harness.client.resume(started.sessionId),
+    ]);
+
+    assert.equal(first.restarted, true);
+    assert.equal(second.restarted, true);
+    assert.equal(first.url, second.url);
+  } finally {
+    await harness.cleanUp();
+  }
+});
+
+sessionTest("an unexpectedly exited runtime recovers the open planning session", async () => {
+  const harness = await createHarness();
+  try {
+    const started = await harness.start("Exit recovery");
+    await harness.exitRuntime();
+
+    const resumed = await harness.client.resume(started.sessionId);
+
+    assert.equal(resumed.restarted, true);
+    assert.equal(resumed.topic, "Exit recovery");
   } finally {
     await harness.cleanUp();
   }
@@ -195,15 +280,27 @@ sessionTest("registered artifacts survive idle recovery", async () => {
   }
 });
 
-sessionTest("a closed planning session cannot recover", async () => {
+sessionTest("closure retains planning state and artifacts but removes runtime credentials", async () => {
   const harness = await createHarness();
   try {
+    const artifactPath = join(harness.workspace, "final-plan.md");
+    await writeFile(artifactPath, "# Final plan\n");
     const started = await harness.start("Completed planning");
+    await harness.client.artifact(started.sessionId, artifactPath);
     await harness.idleRuntime();
 
     await harness.client.close(started.sessionId);
 
+    const persisted = JSON.parse(await readFile(join(harness.root, started.sessionId, "state.json"), "utf8"));
+    const terminalState = await harness.client.state(started.sessionId);
+    assert.equal(persisted.status, "closed");
+    assert.equal(terminalState.status, "closed");
+    assert.equal(terminalState.artifacts[0].content, "# Final plan\n");
+    await assert.rejects(access(join(harness.root, started.sessionId, "registry.json")));
     await assert.rejects(harness.client.resume(started.sessionId), /closed and cannot be resumed/);
+
+    await harness.client.close(started.sessionId);
+    await assert.rejects(access(join(harness.root, started.sessionId, "registry.json")));
   } finally {
     await harness.cleanUp();
   }
@@ -218,6 +315,45 @@ sessionTest("cancellation remains the planning session outcome after close", asy
     await harness.client.close(started.sessionId);
 
     await assert.rejects(harness.client.resume(started.sessionId), /cancelled and cannot be resumed/);
+  } finally {
+    await harness.cleanUp();
+  }
+});
+
+sessionTest("an answer is replayed after its delivery process is interrupted", async () => {
+  const harness = await createHarness();
+  try {
+    const started = await harness.start("Replay planning");
+    const question = { id: "release", question: "Release?", answerType: "confirm" };
+    const answerPending = harness.client.ask(started.sessionId, question);
+    await waitForQuestion(started.url);
+    await postFromBrowser(started.url, "/answer", {
+      nodeId: question.id,
+      selectedOptionIds: ["yes"],
+      note: "Same decision",
+    });
+    const first = await answerPending;
+
+    const recoveredClient = new PlanningSessionClient({
+      root: harness.root,
+      cwd: harness.workspace,
+      runtime: new ControlledPlanningRuntime(),
+      openBrowser: () => {},
+    });
+    const replay = await recoveredClient.wait(started.sessionId);
+    const editPending = recoveredClient.wait(started.sessionId);
+    await postFromBrowser(started.url, "/edit", {
+      nodeId: question.id,
+      selectedOptionIds: ["later"],
+      note: "Revised after replay",
+    });
+    const edit = await editPending;
+
+    assert.deepEqual(replay, first);
+    assert.deepEqual(
+      { type: edit.type, selectedOptionIds: edit.selectedOptionIds, note: edit.note },
+      { type: "edit", selectedOptionIds: ["later"], note: "Revised after replay" },
+    );
   } finally {
     await harness.cleanUp();
   }
@@ -260,6 +396,67 @@ sessionTest("waiting after an answer delivers only the later edit", async () => 
   }
 });
 
+sessionTest("an unrelated recorded PID is never terminated", async () => {
+  const harness = await createHarness();
+  const unrelated = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"]);
+  try {
+    const started = await harness.start("Safe takeover");
+    await harness.idleRuntime();
+    const registryPath = join(harness.root, started.sessionId, "registry.json");
+    const registry = JSON.parse(await readFile(registryPath, "utf8"));
+    await writeFile(registryPath, JSON.stringify({
+      ...registry,
+      port: 1,
+      pid: unrelated.pid,
+      runtimeId: "unrelated-runtime",
+    }));
+
+    const resumed = await harness.client.resume(started.sessionId);
+
+    assert.equal(resumed.restarted, true);
+    assert.equal(unrelated.exitCode, null);
+    process.kill(unrelated.pid, 0);
+  } finally {
+    unrelated.kill("SIGKILL");
+    await new Promise((resolve) => unrelated.once("exit", resolve));
+    await harness.cleanUp();
+  }
+});
+
+sessionTest("unsupported legacy connection records are rejected clearly", async () => {
+  const harness = await createHarness();
+  try {
+    const started = await harness.start("Legacy connection");
+    await harness.exitRuntime();
+    const registryPath = join(harness.root, started.sessionId, "registry.json");
+    const registry = JSON.parse(await readFile(registryPath, "utf8"));
+    delete registry.version;
+    await writeFile(registryPath, JSON.stringify(registry));
+
+    await assert.rejects(
+      harness.client.resume(started.sessionId),
+      /unsupported planning canvas connection format/,
+    );
+  } finally {
+    await harness.cleanUp();
+  }
+});
+
+sessionTest("unsupported legacy persistence is rejected clearly", async () => {
+  const root = await mkdtemp(join(tmpdir(), "planning-session-legacy-"));
+  const sessionId = "legacy-session";
+  const dir = join(root, sessionId);
+  await mkdir(dir);
+  await writeFile(join(dir, "state.json"), JSON.stringify({ topic: "Old", status: "live" }));
+  await writeFile(join(dir, "registry.json"), JSON.stringify({ sessionId, token: "old", port: 1, pid: 1 }));
+  const client = new PlanningSessionClient({ root, openBrowser: () => {} });
+  try {
+    await assert.rejects(client.resume(sessionId), /unsupported planning canvas state format/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("the shell adapter carries a planning decision through the browser", { timeout: 10_000 }, async () => {
   const home = await mkdtemp(join(tmpdir(), "planning-canvas-cli-"));
   const env = { ...process.env, PLANNING_CANVAS_HOME: home, PLANNING_CANVAS_NO_OPEN: "1" };
@@ -298,6 +495,16 @@ test("the shell adapter carries a planning decision through the browser", { time
         note: "Required",
       },
     );
+
+    const editPending = spawnCli(["wait", "--session", sessionId], env);
+    await postFromBrowser(session.url, "/edit", {
+      nodeId: question.id,
+      selectedOptionIds: ["manual"],
+      note: "Revised",
+    });
+    const edit = await editPending;
+    assert.equal(edit.type, "edit");
+    assert.deepEqual(edit.selectedOptionIds, ["manual"]);
   } finally {
     if (sessionId) spawnSync(process.execPath, [cli, "close", "--session", sessionId], { env });
     await rm(home, { recursive: true, force: true });

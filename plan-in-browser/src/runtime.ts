@@ -5,16 +5,16 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { ArtifactTracker, type ArtifactInput } from "./artifact-tracker.js";
-import { planningSessionStatusAfterStop } from "./planning-session-status.js";
 import type { Question } from "./session.js";
 
 type Answer = { selectedOptionIds: string[]; note: string };
 type DecisionNode = Question & { status: "active" | "pending" | "resolved"; answer: Answer | null };
 type CanvasEvent = { type: string; seq: number; [key: string]: unknown };
 type PlanningState = {
+  version: 2;
   sessionId: string;
   topic: string;
-  status: string;
+  status: "open" | "cancelled" | "closed";
   nodes: DecisionNode[];
   events: CanvasEvent[];
   seq: number;
@@ -22,7 +22,6 @@ type PlanningState = {
 };
 type Waiter = { cursor: number; res: ServerResponse };
 type AnswerInput = { nodeId: string; selectedOptionIds?: string[]; note?: string };
-type TerminationReason = "closed" | "idle";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const pageRoot = join(here, "..", "page");
@@ -31,45 +30,42 @@ const option = (name: string) => {
   const index = args.indexOf(name);
   return index >= 0 ? args[index + 1] : undefined;
 };
-const parseTerminationReason = (value: string | undefined): TerminationReason => {
-  if (!value || value === "closed") return "closed";
-  if (value === "idle") return "idle";
-  throw new Error(`invalid termination reason: ${value}`);
-};
-
 const sessionId = option("--session");
 const token = option("--token");
+const runtimeId = option("--runtime-id");
 const dir = option("--dir");
 const topic = option("--topic") || "Planning session";
-const terminationReason = parseTerminationReason(option("--termination-reason"));
 const CLOSE_GRACE_MS = 1500;
 const configuredIdleMs = Number(process.env.PLANNING_CANVAS_IDLE_MS);
 const IDLE_MS = Number.isFinite(configuredIdleMs) && configuredIdleMs > 0
   ? configuredIdleMs
   : 2 * 60 * 60 * 1000;
-if (!sessionId || !token || !dir) {
-  throw new Error("missing --session, --token, or --dir");
+if (!sessionId || !token || !runtimeId || !dir) {
+  throw new Error("missing --session, --token, --runtime-id, or --dir");
 }
 
 mkdirSync(dir, { recursive: true });
 const stateFile = join(dir, "state.json");
 let state: PlanningState = {
+  version: 2,
   sessionId,
   topic,
-  status: "live",
+  status: "open",
   nodes: [],
   events: [],
   seq: 0,
   cwd: process.cwd(),
 };
 if (existsSync(stateFile)) {
-  try {
-    const persisted = JSON.parse(readFileSync(stateFile, "utf8"));
-    delete persisted.artifacts;
-    state = { ...state, ...persisted, status: "live" };
-  } catch {
-    // A corrupt recovery file starts a fresh canvas.
+  const persisted = JSON.parse(readFileSync(stateFile, "utf8")) as Partial<PlanningState>;
+  if (persisted.version !== 2) throw new Error("unsupported planning canvas state format");
+  if (persisted.sessionId !== sessionId || !["open", "cancelled", "closed"].includes(persisted.status || "")) {
+    throw new Error("invalid planning canvas state");
   }
+  if (persisted.status !== "open") {
+    throw new Error(`planning session is ${persisted.status} and cannot start a runtime`);
+  }
+  state = { ...state, ...persisted } as PlanningState;
 }
 state.cwd ||= process.cwd();
 
@@ -183,6 +179,7 @@ const server = http.createServer(async (req, res) => {
       tree: state.nodes,
       artifacts: artifactTracker.snapshot(),
       cursor: state.seq,
+      runtimeId,
     });
   }
 
@@ -254,10 +251,10 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === "POST" && url.pathname === "/close") {
-    state.status = planningSessionStatusAfterStop(state.status, "closed");
+    if (state.status !== "cancelled") state.status = "closed";
     persist();
     sendJson(res, { ok: true });
-    setTimeout(() => shutdown("closed", true), CLOSE_GRACE_MS).unref();
+    setTimeout(() => shutdown(), CLOSE_GRACE_MS).unref();
     return;
   }
 
@@ -270,20 +267,17 @@ server.listen(0, "127.0.0.1", () => {
   process.stdout.write(`${JSON.stringify({ port: address.port })}\n`);
 });
 
-function shutdown(reason: TerminationReason = "closed", stateAlreadyPersisted = false) {
+function shutdown() {
   if (shuttingDown) return;
   shuttingDown = true;
-  state.status = planningSessionStatusAfterStop(state.status, reason);
-  if (!stateAlreadyPersisted) persist();
-  const waiterEvent = reason === "idle" ? { type: "idle", reason: "idle" } : { type: "cancel" };
-  for (const waiter of [...waiters]) settle(waiter, waiterEvent);
+  for (const waiter of [...waiters]) settle(waiter, { type: "idle", reason: "idle" });
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 500).unref();
 }
 
 setInterval(() => {
-  if (Date.now() - lastBrowserActivity >= IDLE_MS) shutdown("idle");
+  if (Date.now() - lastBrowserActivity >= IDLE_MS) shutdown();
 }, Math.min(60_000, IDLE_MS)).unref();
 
-process.on("SIGTERM", () => shutdown(terminationReason));
-process.on("SIGINT", () => shutdown());
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);
