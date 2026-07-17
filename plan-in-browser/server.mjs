@@ -190,6 +190,21 @@ const server = http.createServer(async (req, res) => {
     return res.end(page);
   }
 
+  const pageAssets = {
+    "/assets/highlight.min.js": ["highlight.min.js", "text/javascript; charset=utf-8"],
+    "/assets/highlight-github.min.css": ["highlight-github.min.css", "text/css; charset=utf-8"],
+  };
+  if (req.method === "GET" && pageAssets[url.pathname]) {
+    const [filename, contentType] = pageAssets[url.pathname];
+    const asset = readFileSync(join(here, "page", "vendor", filename));
+    res.writeHead(200, {
+      "content-type": contentType,
+      "cache-control": "public, max-age=86400",
+      "x-content-type-options": "nosniff",
+    });
+    return res.end(asset);
+  }
+
   if (!authorized(req, url)) return sendJson(res, { error: "unauthorized" }, 401);
 
   if (req.method === "GET" && url.pathname === "/state") {

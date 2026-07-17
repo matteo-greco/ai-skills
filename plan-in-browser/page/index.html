@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Planning canvas</title>
+  <link rel="stylesheet" href="/assets/highlight-github.min.css">
   <style>
     :root { color-scheme: light; --ink:#1f2937; --muted:#78716c; --line:#e7e5e4; --paper:#fff; --wash:#fafaf9; --accent:#4f46e5; --accent-soft:#eef2ff; --success:#047857; }
     * { box-sizing:border-box; }
@@ -62,8 +63,10 @@
     details.artifact summary::before { content:"›"; color:var(--muted); font-size:20px; line-height:1; transition:transform .12s ease; }
     details.artifact[open] summary::before { transform:rotate(90deg); }
     .artifact-path { min-width:0; flex:1; }
+    .artifact-language { flex:0 0 auto; color:var(--muted); font:500 11px/1.2 ui-sans-serif,system-ui,sans-serif; letter-spacing:.08em; text-transform:uppercase; }
     .artifact-error { padding:12px 14px; border-top:1px solid var(--line); color:#b91c1c; background:#fef2f2; }
     pre { max-height:70vh; margin:0; overflow:auto; border-top:1px solid var(--line); padding:16px; background:#fafaf9; color:#292524; font:13px/1.55 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace; tab-size:2; white-space:pre; }
+    pre code.hljs { padding:0; background:transparent; overflow:visible; }
     @media (prefers-reduced-motion:reduce) { .spinner { animation-duration:1.8s; } }
     @media (max-width:800px) {
       main { width:min(100% - 20px,780px); padding-top:28px; }
@@ -99,6 +102,7 @@
       </aside>
     </div>
   </main>
+<script src="/assets/highlight.min.js"></script>
 <script>
   const token = new URLSearchParams(location.search).get("token") || "";
   const headers = { "content-type":"application/json", "x-planning-canvas-token":token };
@@ -173,6 +177,27 @@
     if (active) active.scrollIntoView({ behavior:"smooth", block:"center" });
   }
 
+  const languageByExtension = {
+    bash:"bash", c:"c", cc:"cpp", cjs:"javascript", cpp:"cpp", cs:"csharp", css:"css",
+    cts:"typescript", gql:"graphql", go:"go", graphql:"graphql", h:"c", hpp:"cpp", htm:"xml",
+    html:"xml", ini:"ini", java:"java", js:"javascript", json:"json", jsonc:"json", jsx:"javascript",
+    kt:"kotlin", kts:"kotlin", less:"less", lua:"lua", md:"markdown", mjs:"javascript", mts:"typescript",
+    php:"php", pl:"perl", py:"python", rb:"ruby", rs:"rust", scss:"scss", sh:"bash", sql:"sql",
+    svelte:"xml", svg:"xml", swift:"swift", toml:"ini", ts:"typescript", tsx:"typescript", vue:"xml",
+    wasm:"wasm", xml:"xml", yaml:"yaml", yml:"yaml", zsh:"bash",
+  };
+  const languageByFilename = {
+    dockerfile:"dockerfile", gemfile:"ruby", makefile:"makefile", rakefile:"ruby",
+  };
+
+  function artifactLanguage(artifact) {
+    const path = artifact.displayPath || artifact.path || "";
+    const filename = path.split(/[\\/]/).pop().toLowerCase();
+    const extension = filename.includes(".") ? filename.split(".").pop() : "";
+    const language = languageByFilename[filename] || languageByExtension[extension];
+    return language && window.hljs?.getLanguage(language) ? language : undefined;
+  }
+
   function renderArtifacts(artifacts) {
     artifactList.replaceChildren();
     if (artifacts.length === 0) {
@@ -189,11 +214,15 @@
       };
       const summary = element("summary");
       summary.append(element("span", "artifact-path", artifact.title || artifact.displayPath || artifact.path));
+      const language = artifactLanguage(artifact);
+      if (language) summary.append(element("span", "artifact-language", language));
       details.append(summary);
       if (artifact.error) details.append(element("div", "artifact-error", artifact.error));
       else {
         const pre = element("pre");
-        pre.append(element("code", "", artifact.content || ""));
+        const code = element("code", language ? `hljs language-${language}` : "", artifact.content || "");
+        if (language) code.innerHTML = window.hljs.highlight(artifact.content || "", { language, ignoreIllegals:true }).value;
+        pre.append(code);
         details.append(pre);
       }
       artifactList.append(details);
