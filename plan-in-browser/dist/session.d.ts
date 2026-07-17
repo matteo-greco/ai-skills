@@ -1,3 +1,4 @@
+import { type PlanningRuntime } from "./runtime-process.js";
 export type CanvasEvent = {
     type: "started" | "resumed" | "answer" | "edit" | "idle" | "cancel" | "timeout" | "closed";
     sessionId?: string;
@@ -27,11 +28,13 @@ type ClientOptions = {
     root?: string;
     cwd?: string;
     openBrowser?: (url: string) => void;
+    runtime?: PlanningRuntime;
 };
 export declare class PlanningSessionClient {
     readonly root: string;
     readonly cwd: string;
     readonly openBrowser: (url: string) => void;
+    readonly runtime: PlanningRuntime;
     constructor(options?: ClientOptions);
     private paths;
     private readRegistry;

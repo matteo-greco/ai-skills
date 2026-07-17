@@ -23,13 +23,17 @@ test("resolves a project-local skill by directory name", async () => {
 
   const result = spawnSync(process.execPath, [cli, "example"], { cwd, encoding: "utf8" });
 
-  assert.equal(result.status, 0, result.stderr);
-  assert.equal(result.stdout.trim(), await realpath(skill));
+  assert.deepEqual(
+    { status: result.status, output: result.stdout.trim() },
+    { status: 0, output: await realpath(skill) },
+  );
 });
 
 test("rejects invalid skill names", () => {
   const result = spawnSync(process.execPath, [cli, "../example"], { encoding: "utf8" });
 
-  assert.equal(result.status, 2);
-  assert.match(result.stderr, /usage: resolve-skill/);
+  assert.deepEqual(
+    { status: result.status, showsUsage: /usage: resolve-skill/.test(result.stderr) },
+    { status: 2, showsUsage: true },
+  );
 });

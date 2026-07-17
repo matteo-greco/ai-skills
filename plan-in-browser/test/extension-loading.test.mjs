@@ -4,23 +4,28 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { loadExtensions } from "../../node_modules/@earendil-works/pi-coding-agent/dist/core/extensions/loader.js";
+import { DefaultResourceLoader } from "@earendil-works/pi-coding-agent";
 
 const skillRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-test("the planning canvas extension loads through its auto-discovery symlink", async () => {
+test("the planning canvas extension is discovered through its installation symlink", async () => {
   const home = await mkdtemp(join(tmpdir(), "planning-canvas-extension-"));
-  const extensions = join(home, ".pi", "agent", "extensions");
+  const agentDir = join(home, ".pi", "agent");
+  const extensions = join(agentDir, "extensions");
   const installed = join(extensions, "planning-canvas");
 
   try {
     await mkdir(extensions, { recursive: true });
     await symlink(skillRoot, installed, "dir");
+    const loader = new DefaultResourceLoader({ cwd: home, agentDir });
 
-    const result = await loadExtensions([join(installed, "index.ts")], skillRoot);
+    await loader.reload();
+    const result = loader.getExtensions();
 
-    assert.deepEqual(result.errors, []);
-    assert.equal(result.extensions.length, 1);
+    assert.deepEqual(
+      { errors: result.errors, extensionCount: result.extensions.length },
+      { errors: [], extensionCount: 1 },
+    );
   } finally {
     await rm(home, { recursive: true, force: true });
   }

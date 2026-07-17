@@ -21,9 +21,10 @@ const QuestionSchema = Type.Object({
   recommendation: Type.Optional(Type.String({ description: "Recommended answer and concise reasoning" })),
 });
 
-export default function planningCanvas(pi: ExtensionAPI) {
+type PlanningSession = Pick<PlanningSessionClient, "start" | "resume" | "ask" | "artifact" | "close">;
+
+function registerPlanningCanvas(pi: ExtensionAPI, client: PlanningSession) {
   const sessionEntryType = "planning-canvas-session";
-  const client = new PlanningSessionClient();
   let sessionId: string | undefined;
   let recoverableSessionId: string | undefined;
   let url: string | undefined;
@@ -243,3 +244,11 @@ export default function planningCanvas(pi: ExtensionAPI) {
     registeredArtifacts.clear();
   });
 }
+
+export function createPlanningCanvasExtension(
+  createClient: () => PlanningSession = () => new PlanningSessionClient(),
+) {
+  return (pi: ExtensionAPI) => registerPlanningCanvas(pi, createClient());
+}
+
+export default createPlanningCanvasExtension();

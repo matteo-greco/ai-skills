@@ -3,8 +3,9 @@ import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
+
+import { ChildProcessPlanningRuntime, type PlanningRuntime } from "./runtime-process.js";
 
 export type CanvasEvent = {
   type: "started" | "resumed" | "answer" | "edit" | "idle" | "cancel" | "timeout" | "closed";
@@ -48,10 +49,8 @@ type ClientOptions = {
   root?: string;
   cwd?: string;
   openBrowser?: (url: string) => void;
+  runtime?: PlanningRuntime;
 };
-
-const here = dirname(fileURLToPath(import.meta.url));
-const skillRoot = join(here, "..");
 
 function systemBrowserOpener(url: string) {
   if (process.env.PLANNING_CANVAS_NO_OPEN === "1") return;
@@ -73,11 +72,13 @@ export class PlanningSessionClient {
   readonly root: string;
   readonly cwd: string;
   readonly openBrowser: (url: string) => void;
+  readonly runtime: PlanningRuntime;
 
   constructor(options: ClientOptions = {}) {
     this.root = options.root || process.env.PLANNING_CANVAS_HOME || join(homedir(), ".cache", "planning-canvas");
     this.cwd = options.cwd || process.cwd();
     this.openBrowser = options.openBrowser || systemBrowserOpener;
+    this.runtime = options.runtime || new ChildProcessPlanningRuntime();
   }
 
   private paths(sessionId: string) {
@@ -149,63 +150,7 @@ export class PlanningSessionClient {
   private async spawnRuntime(sessionId: string, token: string, topic: string): Promise<Registry> {
     const { dir, registry: registryFile } = this.paths(sessionId);
     mkdirSync(dir, { recursive: true, mode: 0o700 });
-    const child = spawn(
-      process.execPath,
-      [
-        join(skillRoot, "server.mjs"),
-        "--session",
-        sessionId,
-        "--token",
-        token,
-        "--dir",
-        dir,
-        "--topic",
-        topic,
-      ],
-      { detached: true, stdio: ["ignore", "pipe", "pipe"], cwd: this.cwd },
-    );
-    if (!child.pid) throw new Error("planning canvas server failed to start");
-
-    const readiness = await new Promise<{ port: number }>((resolve, reject) => {
-      let stdout = "";
-      let stderr = "";
-      let settled = false;
-      const finish = (error?: Error, ready?: { port: number }) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        child.removeListener("error", onError);
-        child.removeListener("exit", onExit);
-        if (error) reject(error);
-        else resolve(ready!);
-      };
-      const onError = (error: Error) => finish(error);
-      const onExit = (code: number | null) =>
-        finish(new Error(stderr.trim() || `planning canvas server exited ${code}`));
-      const timer = setTimeout(
-        () => finish(new Error(stderr.trim() || "planning canvas server failed to start")),
-        5_000,
-      );
-      child.on("error", onError);
-      child.on("exit", onExit);
-      child.stderr.on("data", (chunk) => (stderr += chunk));
-      child.stdout.on("data", (chunk) => {
-        stdout += chunk;
-        const newline = stdout.indexOf("\n");
-        if (newline < 0) return;
-        try {
-          const ready = JSON.parse(stdout.slice(0, newline)) as { port?: unknown };
-          if (typeof ready.port !== "number") throw new Error("runtime did not report a port");
-          finish(undefined, { port: ready.port });
-        } catch (cause) {
-          finish(cause instanceof Error ? cause : new Error(String(cause)));
-        }
-      });
-    });
-
-    child.stdout.destroy();
-    child.stderr.destroy();
-    child.unref();
+    const connection = await this.runtime.start({ sessionId, token, dir, topic, cwd: this.cwd });
     let previous: Partial<Registry> = {};
     if (existsSync(registryFile)) {
       try {
@@ -219,8 +164,8 @@ export class PlanningSessionClient {
       sessionId,
       topic,
       token,
-      port: readiness.port,
-      pid: child.pid,
+      port: connection.port,
+      pid: connection.pid,
       cursor: previous.cursor || 0,
       status: "live",
     };
@@ -353,7 +298,10 @@ export class PlanningSessionClient {
       }
     }
 
-    this.writeRegistry(sessionId, { ...registry, status: "closed" });
+    this.writeRegistry(sessionId, {
+      ...registry,
+      status: persisted.status === "cancelled" ? "cancelled" : "closed",
+    });
     return { type: "closed" as const, sessionId };
   }
 

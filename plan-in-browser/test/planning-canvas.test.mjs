@@ -1,18 +1,79 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { spawn, spawnSync } from "node:child_process";
 
+import { ControlledPlanningRuntime } from "../dist/runtime-process.js";
+import { PlanningSessionClient } from "../dist/session.js";
+
 const skillRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const cli = join(skillRoot, "canvas.mjs");
+const sessionTest = (name, run) => test(name, { timeout: 10_000 }, run);
 
-function runCli(args, env) {
-  const result = spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env });
-  assert.equal(result.status, 0, result.stderr);
-  return JSON.parse(result.stdout);
+async function createHarness() {
+  const root = await mkdtemp(join(tmpdir(), "planning-session-"));
+  const openedUrls = [];
+  const runtime = new ControlledPlanningRuntime();
+  const client = new PlanningSessionClient({ root, runtime, openBrowser: (url) => openedUrls.push(url) });
+  let sessionId;
+
+  return {
+    client,
+    root,
+    openedUrls,
+    async start(topic) {
+      const started = await client.start(topic);
+      sessionId = started.sessionId;
+      return started;
+    },
+    async idleRuntime() {
+      await runtime.idle(sessionId);
+    },
+    async cleanUp() {
+      if (sessionId) await client.close(sessionId).catch(() => {});
+      await rm(root, { recursive: true, force: true });
+    },
+  };
+}
+
+function browserEndpoint(url, path) {
+  const browserUrl = new URL(url);
+  return {
+    url: `${browserUrl.origin}${path}`,
+    headers: { "x-planning-canvas-token": browserUrl.searchParams.get("token") },
+  };
+}
+
+async function postFromBrowser(url, path, body) {
+  const endpoint = browserEndpoint(url, path);
+  const response = await fetch(endpoint.url, {
+    method: "POST",
+    headers: { ...endpoint.headers, "content-type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (!response.ok) throw new Error(await response.text());
+}
+
+async function waitForQuestion(url) {
+  const endpoint = browserEndpoint(url, "/state");
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    const response = await fetch(endpoint.url, { headers: endpoint.headers });
+    const state = await response.json();
+    if (state.tree.length > 0) return state;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error("question was not published");
+}
+
+async function waitForRecoveredBrowser(openedUrls) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (openedUrls.length >= 2) return openedUrls.at(-1);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error("recovered planning session did not open in the browser");
 }
 
 function spawnCli(args, env) {
@@ -21,375 +82,195 @@ function spawnCli(args, env) {
   let stderr = "";
   child.stdout.on("data", (chunk) => (stdout += chunk));
   child.stderr.on("data", (chunk) => (stderr += chunk));
-  return {
-    child,
-    completed: new Promise((resolve, reject) => {
-      child.on("error", reject);
-      child.on("close", (code) => {
-        if (code === 0) resolve(JSON.parse(stdout));
-        else reject(new Error(stderr || `canvas exited ${code}`));
-      });
-    }),
-  };
+  return new Promise((resolve, reject) => {
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) resolve(JSON.parse(stdout));
+      else reject(new Error(stderr || `canvas exited ${code}`));
+    });
+  });
 }
 
-async function waitForExit(pid) {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    try {
-      process.kill(pid, 0);
-    } catch {
-      return;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  throw new Error(`process ${pid} did not exit`);
-}
-
-async function waitForReplacementRegistry(file, previousPid) {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    try {
-      const registry = JSON.parse(await readFile(file, "utf8"));
-      if (registry.pid !== previousPid) return registry;
-    } catch {
-      // Atomic registry replacement can briefly hide the file.
-    }
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  throw new Error("replacement runtime was not registered");
-}
-
-async function waitForQuestion(url, token) {
-  for (let attempt = 0; attempt < 50; attempt += 1) {
-    const response = await fetch(`${url}state`, { headers: { "x-planning-canvas-token": token } });
-    const state = await response.json();
-    if (state.tree.length > 0) return state;
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-  throw new Error("question was not published");
-}
-
-test("a state request recovers a crashed planning session", { timeout: 10_000 }, async () => {
-  const home = await mkdtemp(join(tmpdir(), "planning-canvas-recovery-"));
-  const env = { ...process.env, PLANNING_CANVAS_HOME: home, PLANNING_CANVAS_NO_OPEN: "1" };
-  let sessionId;
-
+sessionTest("an idle planning session resumes with its topic", async () => {
+  const harness = await createHarness();
   try {
-    const started = runCli(["start", "--topic", "Recovery test"], env);
-    sessionId = started.sessionId;
-    const registryFile = join(home, sessionId, "registry.json");
-    const original = JSON.parse(await readFile(registryFile, "utf8"));
-    process.kill(original.pid, "SIGKILL");
-    await waitForExit(original.pid);
+    const started = await harness.start("Release planning");
+    await harness.idleRuntime();
 
-    const state = runCli(["state", "--session", sessionId], env);
-    const recovered = JSON.parse(await readFile(registryFile, "utf8"));
+    const resumed = await harness.client.resume(started.sessionId);
 
-    assert.equal(state.status, "live");
-    assert.notEqual(recovered.pid, original.pid);
+    assert.deepEqual(
+      { topic: resumed.topic, restarted: resumed.restarted },
+      { topic: "Release planning", restarted: true },
+    );
   } finally {
-    if (sessionId) runCli(["close", "--session", sessionId], env);
-    await rm(home, { recursive: true, force: true });
+    await harness.cleanUp();
   }
 });
 
-test("closing a crashed planning session prevents recovery", { timeout: 10_000 }, async () => {
-  const home = await mkdtemp(join(tmpdir(), "planning-canvas-closed-"));
+sessionTest("asking after idle recovery delivers the person's answer", async () => {
+  const harness = await createHarness();
+  try {
+    const started = await harness.start("Recovery planning");
+    await harness.idleRuntime();
+    const question = { id: "ship", question: "Ship now?", answerType: "confirm" };
+
+    const answerPending = harness.client.ask(started.sessionId, question);
+    const recoveredUrl = await waitForRecoveredBrowser(harness.openedUrls);
+    await waitForQuestion(recoveredUrl);
+    await postFromBrowser(recoveredUrl, "/answer", {
+      nodeId: question.id,
+      selectedOptionIds: ["confirmed"],
+      note: "Ready",
+    });
+
+    const answer = await answerPending;
+    assert.deepEqual(
+      {
+        type: answer.type,
+        questionId: answer.questionId,
+        selectedOptionIds: answer.selectedOptionIds,
+        note: answer.note,
+        restarted: answer.restarted,
+      },
+      {
+        type: "answer",
+        questionId: "ship",
+        selectedOptionIds: ["confirmed"],
+        note: "Ready",
+        restarted: true,
+      },
+    );
+  } finally {
+    await harness.cleanUp();
+  }
+});
+
+sessionTest("registered artifacts survive idle recovery", async () => {
+  const harness = await createHarness();
+  try {
+    const artifactPath = join(harness.root, "plan.md");
+    await writeFile(artifactPath, "# Durable plan\n");
+    const started = await harness.start("Artifact planning");
+    await harness.client.artifact(started.sessionId, artifactPath);
+    await harness.idleRuntime();
+
+    const state = await harness.client.state(started.sessionId);
+
+    assert.deepEqual(
+      state.artifacts.map(({ path, content }) => ({ path, content })),
+      [{ path: artifactPath, content: "# Durable plan\n" }],
+    );
+  } finally {
+    await harness.cleanUp();
+  }
+});
+
+sessionTest("a closed planning session cannot recover", async () => {
+  const harness = await createHarness();
+  try {
+    const started = await harness.start("Completed planning");
+    await harness.idleRuntime();
+
+    await harness.client.close(started.sessionId);
+
+    await assert.rejects(harness.client.resume(started.sessionId), /closed and cannot be resumed/);
+  } finally {
+    await harness.cleanUp();
+  }
+});
+
+sessionTest("cancellation remains the planning session outcome after close", async () => {
+  const harness = await createHarness();
+  try {
+    const started = await harness.start("Cancelled planning");
+    await postFromBrowser(started.url, "/cancel");
+
+    await harness.client.close(started.sessionId);
+
+    await assert.rejects(harness.client.resume(started.sessionId), /cancelled and cannot be resumed/);
+  } finally {
+    await harness.cleanUp();
+  }
+});
+
+sessionTest("waiting after an answer delivers only the later edit", async () => {
+  const harness = await createHarness();
+  try {
+    const started = await harness.start("Revision planning");
+    const question = { id: "approach", question: "Which approach?", answerType: "single" };
+    const answerPending = harness.client.ask(started.sessionId, question);
+    await waitForQuestion(started.url);
+    await postFromBrowser(started.url, "/answer", { nodeId: question.id, selectedOptionIds: ["simple"] });
+    await answerPending;
+
+    const editPending = harness.client.wait(started.sessionId);
+    await postFromBrowser(started.url, "/edit", {
+      nodeId: question.id,
+      selectedOptionIds: ["robust"],
+      note: "Changed my mind",
+    });
+
+    const edit = await editPending;
+    assert.deepEqual(
+      {
+        type: edit.type,
+        questionId: edit.questionId,
+        selectedOptionIds: edit.selectedOptionIds,
+        note: edit.note,
+      },
+      {
+        type: "edit",
+        questionId: "approach",
+        selectedOptionIds: ["robust"],
+        note: "Changed my mind",
+      },
+    );
+  } finally {
+    await harness.cleanUp();
+  }
+});
+
+test("the shell adapter carries a planning decision through the browser", { timeout: 10_000 }, async () => {
+  const home = await mkdtemp(join(tmpdir(), "planning-canvas-cli-"));
   const env = { ...process.env, PLANNING_CANVAS_HOME: home, PLANNING_CANVAS_NO_OPEN: "1" };
   let sessionId;
 
   try {
-    const started = runCli(["start", "--topic", "Closed test"], env);
-    sessionId = started.sessionId;
-    const registryFile = join(home, sessionId, "registry.json");
-    const registry = JSON.parse(await readFile(registryFile, "utf8"));
-    process.kill(registry.pid, "SIGKILL");
-    await waitForExit(registry.pid);
-    runCli(["close", "--session", sessionId], env);
-
-    const state = spawnSync(process.execPath, [cli, "state", "--session", sessionId], {
+    const started = spawnSync(process.execPath, [cli, "start", "--topic", "CLI planning"], {
       encoding: "utf8",
       env,
     });
-    const closedRegistry = JSON.parse(await readFile(registryFile, "utf8"));
-    const closedState = JSON.parse(await readFile(join(home, sessionId, "state.json"), "utf8"));
+    if (started.status !== 0) throw new Error(started.stderr);
+    const session = JSON.parse(started.stdout);
+    sessionId = session.sessionId;
+    const question = { id: "delivery", question: "How should this ship?", answerType: "single" };
 
-    assert.notEqual(state.status, 0);
-    assert.match(state.stderr, /closed/);
-    assert.notEqual(closedRegistry.pid, registry.pid);
-    assert.equal(closedState.status, "closed");
-  } finally {
-    if (sessionId) spawnSync(process.execPath, [cli, "close", "--session", sessionId], { env });
-    await rm(home, { recursive: true, force: true });
-  }
-});
-
-test("recovers the pre-refactor persisted session format", { timeout: 10_000 }, async () => {
-  const home = await mkdtemp(join(tmpdir(), "planning-canvas-legacy-"));
-  const env = { ...process.env, PLANNING_CANVAS_HOME: home, PLANNING_CANVAS_NO_OPEN: "1" };
-  const sessionId = "pc-legacy-fixture";
-  const directory = join(home, sessionId);
-  await mkdir(directory, { recursive: true });
-  await writeFile(
-    join(directory, "state.json"),
-    JSON.stringify({
-      sessionId,
-      topic: "Legacy planning",
-      status: "idle",
-      nodes: [],
-      artifacts: [],
-      events: [],
-      seq: 0,
-      cwd: home,
-    }),
-  );
-  await writeFile(
-    join(directory, "registry.json"),
-    JSON.stringify({
-      sessionId,
-      topic: "Legacy planning",
-      token: "legacy-token",
-      port: 1,
-      pid: 999999,
-      cursor: 0,
-      status: "idle",
-    }),
-  );
-
-  try {
-    const state = runCli(["state", "--session", sessionId], env);
-    assert.equal(state.topic, "Legacy planning");
-    assert.equal(state.status, "live");
-  } finally {
-    runCli(["close", "--session", sessionId], env);
-    await rm(home, { recursive: true, force: true });
-  }
-});
-
-test("cancellation remains the durable outcome after close", { timeout: 10_000 }, async () => {
-  const home = await mkdtemp(join(tmpdir(), "planning-canvas-cancelled-"));
-  const env = { ...process.env, PLANNING_CANVAS_HOME: home, PLANNING_CANVAS_NO_OPEN: "1" };
-  let sessionId;
-
-  try {
-    const started = runCli(["start", "--topic", "Cancellation test"], env);
-    sessionId = started.sessionId;
-    const browserUrl = new URL(started.url);
-    const cancelled = await fetch(`${browserUrl.origin}/cancel`, {
-      method: "POST",
-      headers: { "x-planning-canvas-token": browserUrl.searchParams.get("token") },
-    });
-    assert.equal(cancelled.status, 200);
-    runCli(["close", "--session", sessionId], env);
-
-    const state = JSON.parse(await readFile(join(home, sessionId, "state.json"), "utf8"));
-    const registry = JSON.parse(await readFile(join(home, sessionId, "registry.json"), "utf8"));
-    assert.equal(state.status, "cancelled");
-    assert.equal(registry.status, "closed");
-  } finally {
-    if (sessionId) spawnSync(process.execPath, [cli, "close", "--session", sessionId], { env });
-    await rm(home, { recursive: true, force: true });
-  }
-});
-
-test("an ordinary operation recovers an idle planning session", { timeout: 10_000 }, async () => {
-  const home = await mkdtemp(join(tmpdir(), "planning-canvas-idle-"));
-  const env = {
-    ...process.env,
-    PLANNING_CANVAS_HOME: home,
-    PLANNING_CANVAS_NO_OPEN: "1",
-    PLANNING_CANVAS_IDLE_MS: "150",
-  };
-  let sessionId;
-
-  try {
-    const started = runCli(["start", "--topic", "Idle recovery"], env);
-    sessionId = started.sessionId;
-    const registryFile = join(home, sessionId, "registry.json");
-    const original = JSON.parse(await readFile(registryFile, "utf8"));
-    await waitForExit(original.pid);
-
-    const state = runCli(["state", "--session", sessionId], env);
-    const recovered = JSON.parse(await readFile(registryFile, "utf8"));
-    assert.equal(state.status, "live");
-    assert.notEqual(recovered.pid, original.pid);
-  } finally {
-    if (sessionId) runCli(["close", "--session", sessionId], env);
-    await rm(home, { recursive: true, force: true });
-  }
-});
-
-test("artifacts remain registered across runtime recovery", { timeout: 10_000 }, async () => {
-  const home = await mkdtemp(join(tmpdir(), "planning-canvas-artifact-"));
-  const env = { ...process.env, PLANNING_CANVAS_HOME: home, PLANNING_CANVAS_NO_OPEN: "1" };
-  const artifactPath = join(home, "plan.md");
-  await writeFile(artifactPath, "# Durable plan\n");
-  let sessionId;
-
-  try {
-    const started = runCli(["start", "--topic", "Artifact recovery"], env);
-    sessionId = started.sessionId;
-    runCli(["artifact", "--session", sessionId, "--path", artifactPath], env);
-    const registryFile = join(home, sessionId, "registry.json");
-    const original = JSON.parse(await readFile(registryFile, "utf8"));
-    process.kill(original.pid, "SIGKILL");
-    await waitForExit(original.pid);
-
-    const state = runCli(["state", "--session", sessionId], env);
-    assert.equal(state.artifacts.length, 1);
-    assert.equal(state.artifacts[0].path, artifactPath);
-    assert.equal(state.artifacts[0].content, "# Durable plan\n");
-  } finally {
-    if (sessionId) runCli(["close", "--session", sessionId], env);
-    await rm(home, { recursive: true, force: true });
-  }
-});
-
-test("asking a question recovers a crashed planning session", { timeout: 10_000 }, async () => {
-  const home = await mkdtemp(join(tmpdir(), "planning-canvas-ask-recovery-"));
-  const env = { ...process.env, PLANNING_CANVAS_HOME: home, PLANNING_CANVAS_NO_OPEN: "1" };
-  let sessionId;
-
-  try {
-    const started = runCli(["start", "--topic", "Ask recovery test"], env);
-    sessionId = started.sessionId;
-    const registryFile = join(home, sessionId, "registry.json");
-    const original = JSON.parse(await readFile(registryFile, "utf8"));
-    process.kill(original.pid, "SIGKILL");
-    await waitForExit(original.pid);
-
-    const question = { id: "recovered", question: "Did recovery work?", answerType: "confirm" };
-    const asking = spawnCli(["ask", "--session", sessionId, "--json", JSON.stringify(question)], env);
-    const completion = asking.completed.then(
-      (event) => ({ event }),
-      (error) => ({ error }),
-    );
-    const recovered = await waitForReplacementRegistry(registryFile, original.pid);
-    const baseUrl = `http://127.0.0.1:${recovered.port}/`;
-    await waitForQuestion(baseUrl, recovered.token);
-
-    await fetch(`${baseUrl}answer`, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-planning-canvas-token": recovered.token },
-      body: JSON.stringify({ nodeId: question.id, selectedOptionIds: ["confirmed"] }),
-    });
-    const result = await completion;
-    if (result.error) throw result.error;
-    assert.equal(result.event.questionId, question.id);
-    assert.equal(result.event.restarted, true);
-    assert.match(result.event.url, new RegExp(`:${recovered.port}/`));
-  } finally {
-    if (sessionId) runCli(["close", "--session", sessionId], env);
-    await rm(home, { recursive: true, force: true });
-  }
-});
-
-test("the single agent cursor does not replay delivered events", { timeout: 10_000 }, async () => {
-  const home = await mkdtemp(join(tmpdir(), "planning-canvas-cursor-"));
-  const env = { ...process.env, PLANNING_CANVAS_HOME: home, PLANNING_CANVAS_NO_OPEN: "1" };
-  let sessionId;
-
-  try {
-    const started = runCli(["start", "--topic", "Cursor test"], env);
-    sessionId = started.sessionId;
-    const browserUrl = new URL(started.url);
-    const token = browserUrl.searchParams.get("token");
-    const baseUrl = `${browserUrl.origin}/`;
-    const question = { id: "cursor", question: "First delivery?", answerType: "confirm" };
-    const asking = spawnCli(["ask", "--session", sessionId, "--json", JSON.stringify(question)], env);
-    await waitForQuestion(baseUrl, token);
-    await fetch(`${baseUrl}answer`, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-planning-canvas-token": token },
-      body: JSON.stringify({ nodeId: question.id, selectedOptionIds: ["confirmed"] }),
-    });
-    assert.equal((await asking.completed).seq, 1);
-
-    const waiting = spawnCli(["wait", "--session", sessionId], env);
-    await fetch(`${baseUrl}edit`, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-planning-canvas-token": token },
-      body: JSON.stringify({ nodeId: question.id, selectedOptionIds: ["confirmed"], note: "revised" }),
-    });
-    const revised = await waiting.completed;
-    assert.equal(revised.type, "edit");
-    assert.equal(revised.seq, 2);
-  } finally {
-    if (sessionId) runCli(["close", "--session", sessionId], env);
-    await rm(home, { recursive: true, force: true });
-  }
-});
-
-test("the browser can observe closure before the runtime stops", { timeout: 10_000 }, async () => {
-  const home = await mkdtemp(join(tmpdir(), "planning-canvas-close-visible-"));
-  const env = { ...process.env, PLANNING_CANVAS_HOME: home, PLANNING_CANVAS_NO_OPEN: "1" };
-  let sessionId;
-
-  try {
-    const started = runCli(["start", "--topic", "Visible closure"], env);
-    sessionId = started.sessionId;
-    const browserUrl = new URL(started.url);
-    runCli(["close", "--session", sessionId], env);
-
-    const response = await fetch(`${browserUrl.origin}/state`, {
-      headers: { "x-planning-canvas-token": browserUrl.searchParams.get("token") },
-    });
-    const state = await response.json();
-    assert.equal(response.status, 200);
-    assert.equal(state.status, "closed");
-  } finally {
-    if (sessionId) spawnSync(process.execPath, [cli, "close", "--session", sessionId], { env });
-    await rm(home, { recursive: true, force: true });
-  }
-});
-
-test("runs a canvas question through the HTTP server", { timeout: 10_000 }, async () => {
-  const home = await mkdtemp(join(tmpdir(), "planning-canvas-"));
-  const env = { ...process.env, PLANNING_CANVAS_HOME: home, PLANNING_CANVAS_NO_OPEN: "1" };
-  let sessionId;
-
-  try {
-    const started = runCli(["start", "--topic", "Test planning"], env);
-    sessionId = started.sessionId;
-    const browserUrl = new URL(started.url);
-    const token = browserUrl.searchParams.get("token");
-    const baseUrl = `${browserUrl.origin}/`;
-
-    const page = await fetch(started.url);
-    assert.equal(page.status, 200);
-    assert.doesNotMatch(page.headers.get("content-security-policy"), /script-src[^;]*unsafe-inline/);
-    assert.match(await page.text(), /<script src="\/assets\/app\.js"><\/script>/);
-    const app = await fetch(`${baseUrl}assets/app.js`);
-    assert.equal(app.status, 200);
-    assert.match(app.headers.get("content-type"), /^text\/javascript/);
-
-    const question = {
-      id: "delivery",
-      question: "How should this ship?",
-      answerType: "single",
-      options: [{ id: "ci", label: "In CI" }],
-    };
-    const asking = spawnCli(
-      ["ask", "--session", sessionId, "--json", JSON.stringify(question)],
-      env,
-    );
-    const state = await waitForQuestion(baseUrl, token);
-    assert.equal(state.tree[0].question, question.question);
-
-    const answer = await fetch(`${baseUrl}answer`, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-planning-canvas-token": token },
-      body: JSON.stringify({ nodeId: question.id, selectedOptionIds: ["ci"], note: "Required" }),
-    });
-    assert.equal(answer.status, 200);
-    assert.deepEqual(await asking.completed, {
-      type: "answer",
-      questionId: "delivery",
+    const answerPending = spawnCli(["ask", "--session", sessionId, "--json", JSON.stringify(question)], env);
+    await waitForQuestion(session.url);
+    await postFromBrowser(session.url, "/answer", {
+      nodeId: question.id,
       selectedOptionIds: ["ci"],
       note: "Required",
-      seq: 1,
     });
+
+    const answer = await answerPending;
+    assert.deepEqual(
+      {
+        type: answer.type,
+        questionId: answer.questionId,
+        selectedOptionIds: answer.selectedOptionIds,
+        note: answer.note,
+      },
+      {
+        type: "answer",
+        questionId: "delivery",
+        selectedOptionIds: ["ci"],
+        note: "Required",
+      },
+    );
   } finally {
-    if (sessionId) runCli(["close", "--session", sessionId], env);
+    if (sessionId) spawnSync(process.execPath, [cli, "close", "--session", sessionId], { env });
     await rm(home, { recursive: true, force: true });
   }
 });

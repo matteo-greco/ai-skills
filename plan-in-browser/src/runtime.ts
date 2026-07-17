@@ -62,6 +62,7 @@ const sessionId = option("--session");
 const token = option("--token");
 const dir = option("--dir");
 const topic = option("--topic") || "Planning session";
+const terminationReason = option("--termination-reason") || "closed";
 const MAX_ARTIFACT_BYTES = 512 * 1024;
 const CLOSE_GRACE_MS = 1500;
 const configuredIdleMs = Number(process.env.PLANNING_CANVAS_IDLE_MS);
@@ -448,5 +449,5 @@ setInterval(() => {
   if (Date.now() - lastBrowserActivity >= IDLE_MS) shutdown("idle");
 }, Math.min(60_000, IDLE_MS)).unref();
 
-process.on("SIGTERM", () => shutdown());
+process.on("SIGTERM", () => shutdown(terminationReason));
 process.on("SIGINT", () => shutdown());
