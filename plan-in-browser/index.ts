@@ -1,6 +1,10 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
+import {
+  createPlanningSessionOwner,
+  NoRecoverablePlanningSessionError,
+} from "./dist/planning-session-owner.js";
 import { PlanningSessionClient, type CanvasEvent } from "./dist/session.js";
 
 const OptionSchema = Type.Object({
@@ -22,30 +26,17 @@ const QuestionSchema = Type.Object({
 
 type PlanningSession = Pick<PlanningSessionClient, "start" | "resume" | "ask" | "artifact" | "close">;
 
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
 function registerPlanningCanvas(pi: ExtensionAPI, client: PlanningSession) {
-  const sessionEntryType = "planning-canvas-session";
-  let sessionId: string | undefined;
-  let recoverableSessionId: string | undefined;
-  let url: string | undefined;
-
-  function rememberSession(status: "active" | "closed") {
-    if (!sessionId) return;
-    pi.appendEntry(sessionEntryType, { sessionId, url, status });
-  }
-
-  async function resumeSession(id: string) {
-    const resumed = await client.resume(id);
-    sessionId = id;
-    recoverableSessionId = id;
-    url = resumed.url;
-    return resumed;
-  }
-
-  async function registerArtifact(path: string, title?: string, signal?: AbortSignal) {
-    if (!sessionId) throw new Error("No planning canvas is active.");
-    const artifact = await client.artifact(sessionId, path, title, signal);
-    return artifact.path;
-  }
+  const owner = createPlanningSessionOwner({
+    client,
+    record(entry) {
+      pi.appendEntry("planning-canvas-session", entry);
+    },
+  });
 
   pi.registerTool({
     name: "planning_canvas",
@@ -62,29 +53,21 @@ function registerPlanningCanvas(pi: ExtensionAPI, client: PlanningSession) {
     executionMode: "sequential",
 
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-      if (!sessionId) {
-        const started = await client.start(params.topic || params.question);
-        sessionId = started.sessionId;
-        recoverableSessionId = sessionId;
-        url = started.url;
-        rememberSession("active");
-        if (url) ctx.ui.notify(`Planning canvas: ${url}`, "info");
-      }
-
       ctx.ui.setStatus("planning-canvas", "waiting in browser · model idle");
       ctx.ui.setWorkingIndicator({ frames: [] });
-      let event: CanvasEvent;
+      let asked;
       try {
-        event = await client.ask(sessionId!, params, signal);
+        asked = await owner.ask(params, signal);
       } finally {
         ctx.ui.setWorkingIndicator();
         ctx.ui.setStatus("planning-canvas", undefined);
       }
-      if (event.restarted && event.url) {
-        url = event.url;
-        rememberSession("active");
-        ctx.ui.notify(`Recovered planning canvas: ${event.url}`, "warning");
+      if (asked.attachment === "started") ctx.ui.notify(`Planning canvas: ${asked.url}`, "info");
+      if (asked.attachment === "resumed") ctx.ui.notify(`Recovered planning canvas: ${asked.url}`, "warning");
+      if (asked.event.restarted && asked.event.url) {
+        ctx.ui.notify(`Recovered planning canvas: ${asked.event.url}`, "warning");
       }
+      const event: CanvasEvent = asked.event;
       const summary =
         event.type === "answer" || event.type === "edit"
           ? `User ${event.type === "edit" ? "revised" : "answered"} ${event.questionId}: selected ${JSON.stringify(event.selectedOptionIds || [])}${event.note ? `; note: ${event.note}` : ""}`
@@ -93,7 +76,10 @@ function registerPlanningCanvas(pi: ExtensionAPI, client: PlanningSession) {
             : event.type === "cancel"
               ? "User cancelled the browser planning session."
               : JSON.stringify(event);
-      return { content: [{ type: "text", text: summary }], details: { ...event, sessionId, url } };
+      return {
+        content: [{ type: "text" as const, text: summary }],
+        details: { ...event, sessionId: asked.sessionId, url: asked.url },
+      };
     },
   });
 
@@ -107,15 +93,12 @@ function registerPlanningCanvas(pi: ExtensionAPI, client: PlanningSession) {
       sessionId: Type.Optional(Type.String({ description: "Canvas session id; defaults to the canvas saved in this Pi session" })),
     }),
     executionMode: "sequential",
-    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-      const target = params.sessionId || sessionId || recoverableSessionId;
-      if (!target) throw new Error("No recoverable planning canvas is recorded in this Pi session.");
-      const resumed = await resumeSession(target);
-      rememberSession("active");
-      if (url) ctx.ui.notify(`Planning canvas resumed: ${url}`, "info");
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const resumed = await owner.resume(params.sessionId);
+      ctx.ui.notify(`Planning canvas resumed: ${resumed.url}`, "info");
       return {
-        content: [{ type: "text", text: `Resumed planning canvas ${target}${resumed.restarted ? " with a restarted server" : ""}.` }],
-        details: { ...resumed, sessionId: target, url },
+        content: [{ type: "text" as const, text: `Resumed planning canvas ${resumed.sessionId}${resumed.restarted ? " with a restarted server" : ""}.` }],
+        details: resumed,
       };
     },
   });
@@ -135,10 +118,10 @@ function registerPlanningCanvas(pi: ExtensionAPI, client: PlanningSession) {
     }),
     executionMode: "sequential",
     async execute(_toolCallId, params, signal) {
-      const artifactPath = await registerArtifact(params.path, params.title, signal);
+      const artifact = await owner.artifact(params.path, params.title, signal);
       return {
-        content: [{ type: "text", text: `Showing planning artifact ${artifactPath}.` }],
-        details: { path: artifactPath, url },
+        content: [{ type: "text" as const, text: `Showing planning artifact ${artifact.path}.` }],
+        details: { path: artifact.path, url: artifact.url },
       };
     },
   });
@@ -150,20 +133,13 @@ function registerPlanningCanvas(pi: ExtensionAPI, client: PlanningSession) {
     parameters: Type.Object({}),
     executionMode: "sequential",
     async execute() {
-      const target = sessionId || recoverableSessionId;
-      if (!target) {
-        return { content: [{ type: "text", text: "No planning canvas is active." }], details: {} };
+      const closed = await owner.close();
+      if (!closed.closed) {
+        return { content: [{ type: "text" as const, text: "No planning canvas is active." }], details: {} };
       }
-      const closed = await client.close(target);
-      sessionId = target;
-      const closedSession = target;
-      rememberSession("closed");
-      sessionId = undefined;
-      recoverableSessionId = undefined;
-      url = undefined;
       return {
-        content: [{ type: "text", text: `Closed planning canvas ${closedSession}.` }],
-        details: closed,
+        content: [{ type: "text" as const, text: `Closed planning canvas ${closed.sessionId}.` }],
+        details: closed.result,
       };
     },
   });
@@ -171,68 +147,48 @@ function registerPlanningCanvas(pi: ExtensionAPI, client: PlanningSession) {
   pi.registerCommand("planning-canvas-resume", {
     description: "Resume the planning canvas saved in this Pi session, or a specified canvas session id",
     handler: async (args, ctx) => {
-      const target = args.trim() || sessionId || recoverableSessionId;
-      if (!target) {
-        ctx.ui.notify("No recoverable planning canvas is recorded in this Pi session.", "warning");
-        return;
-      }
       try {
-        const resumed = await resumeSession(target);
-        rememberSession("active");
+        const resumed = await owner.resume(args.trim() || undefined);
         ctx.ui.notify(
           `Planning canvas ${resumed.restarted ? "restarted" : "reopened"}: ${resumed.url}`,
           "info",
         );
       } catch (error) {
-        ctx.ui.notify(`Could not resume planning canvas: ${error instanceof Error ? error.message : String(error)}`, "error");
+        const noRecoverableSession = error instanceof NoRecoverablePlanningSessionError;
+        const message = errorMessage(error);
+        ctx.ui.notify(
+          noRecoverableSession ? message : `Could not resume planning canvas: ${message}`,
+          noRecoverableSession ? "warning" : "error",
+        );
       }
     },
   });
 
   pi.on("session_start", async (_event, ctx) => {
-    sessionId = undefined;
-    recoverableSessionId = undefined;
-    url = undefined;
-
-    const saved = [...ctx.sessionManager.getBranch()].reverse().find(
-      (entry) => entry.type === "custom" && entry.customType === sessionEntryType,
-    );
-    if (!saved || saved.type !== "custom") return;
-    const data = saved.data as { sessionId?: unknown; status?: unknown } | undefined;
-    if (data?.status !== "active" || typeof data.sessionId !== "string") return;
-    recoverableSessionId = data.sessionId;
-
-    try {
-      const resumed = await resumeSession(data.sessionId);
+    const restored = await owner.restore(ctx.sessionManager.getBranch());
+    if (restored.status === "attached") {
       ctx.ui.notify(
-        `Recovered planning canvas ${resumed.restarted ? "after restarting its server" : ""}: ${resumed.url}`,
+        `Recovered planning canvas ${restored.restarted ? "after restarting its server" : ""}: ${restored.url}`,
         "info",
       );
-    } catch (error) {
+    } else if (restored.status === "recoverable") {
       ctx.ui.notify(
-        `Planning canvas ${data.sessionId} is recoverable with /planning-canvas-resume: ${error instanceof Error ? error.message : String(error)}`,
+        `Planning canvas ${restored.sessionId} is recoverable with /planning-canvas-resume: ${errorMessage(restored.error)}`,
         "warning",
       );
     }
   });
 
   pi.on("tool_result", async (event, ctx) => {
-    if (!sessionId || event.isError || (event.toolName !== "write" && event.toolName !== "edit")) return;
+    if (event.isError || (event.toolName !== "write" && event.toolName !== "edit")) return;
     const input = event.input as { path?: unknown };
     if (typeof input.path !== "string") return;
     try {
-      await registerArtifact(input.path, undefined, ctx.signal);
+      await owner.artifact(input.path, undefined, ctx.signal);
     } catch (error) {
       // Artifact display must never turn a successful file edit into a failed tool call.
-      ctx.ui.notify(`Could not show planning artifact: ${error instanceof Error ? error.message : String(error)}`, "warning");
+      ctx.ui.notify(`Could not show planning artifact: ${errorMessage(error)}`, "warning");
     }
-  });
-
-  pi.on("session_shutdown", async () => {
-    // Keep active canvases recoverable across Pi reloads, resumes, and clean exits.
-    // The server's idle timeout handles sessions that are never resumed.
-    sessionId = undefined;
-    url = undefined;
   });
 }
 
