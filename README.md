@@ -1,89 +1,114 @@
 # AI Skills
 
-My personal AI skills for development workflows.
+Small, differentiated additions to [Matt Pocock's engineering skills](https://github.com/mattpocock/skills).
+
+Matt's repository owns the general engineering workflow: grilling, specs, tickets, implementation, TDD, code review, triage, debugging, prototyping, and architecture. This repository adds browser-based planning, activity recaps, and specialist GDPR audit verification.
 
 ## Setup
 
-Install via [skills.sh](https://skills.sh):
+Install both repositories via [skills.sh](https://skills.sh):
 
 ```bash
-# install (interactive — pick skills and agents)
-npx skills add matteo-greco/ai-skills -g
+# Matt's general engineering workflow
+npx skills@latest add mattpocock/skills -g
 
-# install all skills, default agents, no prompts
-npx skills add matteo-greco/ai-skills -g -s '*' -y
-
-# update (re-run the install command — it overwrites existing skills)
-npx skills add matteo-greco/ai-skills -g -s '*' -y
-
-# uninstall
-npx skills remove -g challenge think-through plan-in-browser code-review code-health create-tickets bug-triage spec tdd spike refactor adr onboarding gdpr-audit-verify recap
+# These additional skills
+npx skills@latest add matteo-greco/ai-skills -g
 ```
 
-## Skills
+Select `/setup-matt-pocock-skills` when installing Matt's skills, then run it once in each project to configure the issue tracker, triage labels, and documentation layout.
 
-Awareness:
-- **recap** — End-of-day brief — gathers your git activity + PM tickets (Linear/Jira/GH Issues via MCP), detects "today" from largest activity gap (handles night-shift workers), renders 3–5 terse executive bullets ready to paste into standup/Slack
-- **onboarding** — Guided tour of a codebase area, tailored to the reader's background and goals
+Non-interactive install of every skill:
 
-Planning:
-- **challenge** — Challenge and refine a product direction — elicit the real problem, stress-test assumptions, explore alternatives, and scope down
-- **think-through** — Walk a half-formed plan down its decision tree one question at a time in an interactive browser document (not chat), recommending an answer at each step, then export the agreed design as markdown
-- **plan-in-browser** — Run another installed planning skill unchanged while routing every human decision through an interactive browser canvas
-- **spike** — Time-boxed technical investigation to answer a question and unblock `/spec` or `/tdd`
-- **spec** — Break features into acceptance criteria
-- **bug-triage** — Investigate a bug report, reproduce it as a failing test, and hand off to `/tdd` for the fix
-- **create-tickets** — Create one or more well-structured tickets from a spec, ACs, or feature description
+```bash
+npx skills@latest add mattpocock/skills -g -s '*' -y
+npx skills@latest add matteo-greco/ai-skills -g -s '*' -y
+```
 
-Implementation:
-- **tdd** — Implement features using strict TDD (red-green-refactor) with ZOMBIES ordering
-- **code-health** — Identify unhealthy areas of a codebase and suggest refactoring strategies ranked by impact
-- **refactor** — Execute a refactoring safely with incremental steps, test verification, and safety assessment
+Update by rerunning the install commands. Uninstall this repository's skills with:
 
-Shipping:
-- **code-review** — Review code changes or PRs for bugs, missing tests, security issues, and standard violations
+```bash
+npx skills remove -g think-through plan-in-browser gdpr-audit-verify recap
+```
 
-Documentation:
-- **adr** — Document an architectural decision with context, alternatives, and consequences
+## Recommended engineering flow
 
-Compliance:
-- **gdpr-audit-verify** — Verify an external GDPR / TDDDG / ePrivacy audit by reproducing each claim in a real browser and classifying it against EU + DE rules and CJEU case law
+Adapted from Matt Pocock's [`ask-matt`](https://github.com/mattpocock/skills/blob/main/skills/engineering/ask-matt/SKILL.md) decision tree.
 
-## Typical scenarios
+### Main flow: idea → ship
 
-**"The CEO wants us to build X"**
-`/challenge` → refine the vision → `/spec` → write ACs → `/create-tickets` → `/tdd` → implement → `/code-review`
+1. **Sharpen the idea in the browser**
 
-**"I have a half-formed plan and want to think it through"**
-`/think-through` → answer the decision tree in your browser → approve → markdown design doc → `/spec` or `/create-tickets`
+   ```text
+   /plan-in-browser grill-with-docs <idea>
+   ```
 
-**"Let's build this feature"**
-`/spec` → write ACs → `/create-tickets` → track the work → `/tdd` → implement → `/code-review`
+   `grill-with-docs` keeps the discussion grounded in the codebase and records domain language and durable decisions. Without a codebase, use `/plan-in-browser grill-me <idea>` instead.
 
-**"A user reported a bug"**
-`/bug-triage` → reproduce as failing test → `/tdd` → fix → `/code-review`
-Or if it's not urgent: `/bug-triage` → `/create-tickets` → fix later
+2. **Branch when conversation is not enough**
 
-**"This code is a mess"**
-`/code-health` → identify hotspots → `/refactor` → improve incrementally
+   If a question needs runnable logic or a UI you can react to:
 
-**"We're not sure this is feasible"**
-`/spike` → investigate → `/adr` to document the decision → `/spec` if feasible
+   ```text
+   /handoff → fresh session → /prototype → /handoff back
+   ```
 
-**"I want to understand this area before touching it"**
-`/onboarding` → guided tour of the area → `/adr` to document decisions → `/spec` if ready to change it
+   Keep the answer; treat prototype code as throwaway.
 
-**"End of day — what did I do?"**
-`/recap` → terse bullet brief of your git + ticket activity since the last meaningful break, paste-ready for standup or Slack. `--user <name>` to recap a teammate.
+3. **Choose by build size**
 
-**"New dev joining the team"**
-`/onboarding` → guided tour of the codebase
+   Multi-session work:
 
-**"A lawyer / regulator / compliance tool sent us an audit report"**
-`/gdpr-audit-verify` → reproduce each claim in a clean browser, classify against TDDDG § 25 + GDPR + case law, get a per-claim table and ranked fix list
+   ```text
+   /to-spec → /to-tickets → fresh session per ticket → /implement → /code-review
+   ```
 
-## Acknowledgments
+   `/to-tickets` creates tracer-bullet tickets with blocking edges. Work the unblocked frontier and clear context between tickets. `/implement` drives `/tdd` internally and runs `/code-review`; invoke `/code-review` again directly when you want an explicit final branch or PR review.
 
-The TDD skill was inspired by:
-- [mattpocock/skills](https://github.com/mattpocock/skills) — vertical vs horizontal testing, behavior-focused test philosophy
-- [obra/superpowers](https://github.com/obra/superpowers) — structured RED/GREEN verification phases, "when stuck" patterns
+   Small work that fits the current context:
+
+   ```text
+   /implement → /code-review
+   ```
+
+Keep grilling, `/to-spec`, and `/to-tickets` in one context window when possible. If the context gets crowded, use `/handoff` and continue in a fresh session rather than pushing through degraded reasoning.
+
+### On-ramps
+
+**Incoming bugs and requests:**
+
+```text
+/triage → bug:     /diagnosing-bugs → /code-review
+        → request: /implement       → /code-review
+```
+
+Use `/triage` for raw work created by other people. Route confirmed hard bugs, flakes, and performance regressions through `/diagnosing-bugs`; it first builds a tight feedback loop, then reproduces, minimizes, fixes, and adds a regression test. If its post-mortem reveals a missing test seam, continue with `/improve-codebase-architecture`.
+
+Tickets produced by `/to-tickets` are already agent-ready and should not be triaged again.
+
+**A huge, foggy effort:**
+
+```text
+/plan-in-browser wayfinder <destination> → /to-spec → /to-tickets → /implement
+```
+
+Use `wayfinder` only when the decisions cannot fit in one session. It maps and resolves decision work; `/to-spec` collapses those decisions into a buildable plan afterward.
+
+**Codebase upkeep:**
+
+```text
+/improve-codebase-architecture → /plan-in-browser grill-with-docs <chosen opportunity>
+```
+
+## Skills in this repository
+
+- **plan-in-browser** — Run any installed planning or grilling skill unchanged while routing every human decision through an interactive browser canvas. Designed to wrap Matt's `grill-with-docs`, `grill-me`, `grilling`, and `wayfinder` skills.
+- **think-through** — Earlier standalone browser decision-tree workflow. Retained temporarily while `plan-in-browser` replaces it.
+- **recap** — Gather git activity and connected PM tickets, detect the latest work burst, and render a terse 3–5 bullet executive brief for standup or Slack.
+- **gdpr-audit-verify** — Reproduce external GDPR, TDDDG, and ePrivacy audit claims in a real browser and classify them against EU and German rules and CJEU case law.
+
+## Relationship to Matt's skills
+
+This repository intentionally does not maintain local versions of general-purpose skills such as TDD, code review, specs, ticket creation, triage, debugging, refactoring, or ADR creation. Install and update [mattpocock/skills](https://github.com/mattpocock/skills) for those capabilities.
+
+If older versions of this repository left global `tdd`, `code-review`, `spec`, or similar skills installed, remove those stale copies before installing Matt's versions so they cannot shadow the upstream skills.
