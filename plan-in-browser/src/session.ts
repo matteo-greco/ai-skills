@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import { planningSessionStatusAfterStop } from "./planning-session-status.js";
 import { ChildProcessPlanningRuntime, type PlanningRuntime } from "./runtime-process.js";
 
 export type CanvasEvent = {
@@ -300,7 +301,7 @@ export class PlanningSessionClient {
 
     this.writeRegistry(sessionId, {
       ...registry,
-      status: persisted.status === "cancelled" ? "cancelled" : "closed",
+      status: planningSessionStatusAfterStop(persisted.status, "closed"),
     });
     return { type: "closed" as const, sessionId };
   }

@@ -4,6 +4,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { planningSessionStatusAfterStop } from "./planning-session-status.js";
 import { ChildProcessPlanningRuntime } from "./runtime-process.js";
 function systemBrowserOpener(url) {
     if (process.env.PLANNING_CANVAS_NO_OPEN === "1")
@@ -216,7 +217,7 @@ export class PlanningSessionClient {
         }
         this.writeRegistry(sessionId, {
             ...registry,
-            status: persisted.status === "cancelled" ? "cancelled" : "closed",
+            status: planningSessionStatusAfterStop(persisted.status, "closed"),
         });
         return { type: "closed", sessionId };
     }

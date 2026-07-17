@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ArtifactTracker } from "./artifact-tracker.js";
+import { planningSessionStatusAfterStop } from "./planning-session-status.js";
 const here = dirname(fileURLToPath(import.meta.url));
 const pageRoot = join(here, "..", "page");
 const args = process.argv.slice(2);
@@ -222,7 +223,7 @@ const server = http.createServer(async (req, res) => {
         return sendJson(res, { ok: true });
     }
     if (req.method === "POST" && url.pathname === "/close") {
-        state.status = state.status === "cancelled" ? "cancelled" : "closed";
+        state.status = planningSessionStatusAfterStop(state.status, "closed");
         persist();
         sendJson(res, { ok: true });
         setTimeout(() => shutdown("closed", true), CLOSE_GRACE_MS).unref();
@@ -239,7 +240,7 @@ function shutdown(reason = "closed", stateAlreadyPersisted = false) {
     if (shuttingDown)
         return;
     shuttingDown = true;
-    state.status = state.status === "cancelled" ? "cancelled" : reason;
+    state.status = planningSessionStatusAfterStop(state.status, reason);
     if (!stateAlreadyPersisted)
         persist();
     const waiterEvent = reason === "idle" ? { type: "idle", reason: "idle" } : { type: "cancel" };

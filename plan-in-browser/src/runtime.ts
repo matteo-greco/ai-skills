@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { ArtifactTracker, type ArtifactInput } from "./artifact-tracker.js";
+import { planningSessionStatusAfterStop } from "./planning-session-status.js";
 import type { Question } from "./session.js";
 
 type Answer = { selectedOptionIds: string[]; note: string };
@@ -253,7 +254,7 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (req.method === "POST" && url.pathname === "/close") {
-    state.status = state.status === "cancelled" ? "cancelled" : "closed";
+    state.status = planningSessionStatusAfterStop(state.status, "closed");
     persist();
     sendJson(res, { ok: true });
     setTimeout(() => shutdown("closed", true), CLOSE_GRACE_MS).unref();
@@ -272,7 +273,7 @@ server.listen(0, "127.0.0.1", () => {
 function shutdown(reason: TerminationReason = "closed", stateAlreadyPersisted = false) {
   if (shuttingDown) return;
   shuttingDown = true;
-  state.status = state.status === "cancelled" ? "cancelled" : reason;
+  state.status = planningSessionStatusAfterStop(state.status, reason);
   if (!stateAlreadyPersisted) persist();
   const waiterEvent = reason === "idle" ? { type: "idle", reason: "idle" } : { type: "cancel" };
   for (const waiter of [...waiters]) settle(waiter, waiterEvent);
