@@ -2,7 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { resolve } from "node:path";
-import { PlanningSessionClient, type CanvasEvent } from "../dist/session.js";
+import { PlanningSessionClient, type CanvasEvent } from "./dist/session.js";
 
 const OptionSchema = Type.Object({
   id: Type.String({ description: "Stable option identity returned by the canvas" }),

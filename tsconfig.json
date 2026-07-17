@@ -8,5 +8,5 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["plan-in-browser/extension/**/*.ts", "plan-in-browser/src/**/*.ts"]
+  "include": ["plan-in-browser/index.ts", "plan-in-browser/src/**/*.ts"]
 }
