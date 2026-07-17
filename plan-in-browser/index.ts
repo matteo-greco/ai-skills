@@ -1,7 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
-import { resolve } from "node:path";
 import { PlanningSessionClient, type CanvasEvent } from "./dist/session.js";
 
 const OptionSchema = Type.Object({
@@ -28,7 +27,6 @@ function registerPlanningCanvas(pi: ExtensionAPI, client: PlanningSession) {
   let sessionId: string | undefined;
   let recoverableSessionId: string | undefined;
   let url: string | undefined;
-  const registeredArtifacts = new Set<string>();
 
   function rememberSession(status: "active" | "closed") {
     if (!sessionId) return;
@@ -40,17 +38,13 @@ function registerPlanningCanvas(pi: ExtensionAPI, client: PlanningSession) {
     sessionId = id;
     recoverableSessionId = id;
     url = resumed.url;
-    registeredArtifacts.clear();
     return resumed;
   }
 
-  async function registerArtifact(path: string, cwd: string, title?: string, signal?: AbortSignal) {
+  async function registerArtifact(path: string, title?: string, signal?: AbortSignal) {
     if (!sessionId) throw new Error("No planning canvas is active.");
-    const absolutePath = resolve(cwd, path);
-    if (registeredArtifacts.has(absolutePath) && !title) return absolutePath;
-    await client.artifact(sessionId, absolutePath, title, signal);
-    registeredArtifacts.add(absolutePath);
-    return absolutePath;
+    const artifact = await client.artifact(sessionId, path, title, signal);
+    return artifact.path;
   }
 
   pi.registerTool({
@@ -140,11 +134,11 @@ function registerPlanningCanvas(pi: ExtensionAPI, client: PlanningSession) {
       title: Type.Optional(Type.String({ description: "Optional display title; the relative path is used by default" })),
     }),
     executionMode: "sequential",
-    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-      const absolutePath = await registerArtifact(params.path, ctx.cwd, params.title, signal);
+    async execute(_toolCallId, params, signal) {
+      const artifactPath = await registerArtifact(params.path, params.title, signal);
       return {
-        content: [{ type: "text", text: `Showing planning artifact ${absolutePath}.` }],
-        details: { path: absolutePath, url },
+        content: [{ type: "text", text: `Showing planning artifact ${artifactPath}.` }],
+        details: { path: artifactPath, url },
       };
     },
   });
@@ -167,7 +161,6 @@ function registerPlanningCanvas(pi: ExtensionAPI, client: PlanningSession) {
       sessionId = undefined;
       recoverableSessionId = undefined;
       url = undefined;
-      registeredArtifacts.clear();
       return {
         content: [{ type: "text", text: `Closed planning canvas ${closedSession}.` }],
         details: closed,
@@ -200,7 +193,6 @@ function registerPlanningCanvas(pi: ExtensionAPI, client: PlanningSession) {
     sessionId = undefined;
     recoverableSessionId = undefined;
     url = undefined;
-    registeredArtifacts.clear();
 
     const saved = [...ctx.sessionManager.getBranch()].reverse().find(
       (entry) => entry.type === "custom" && entry.customType === sessionEntryType,
@@ -229,7 +221,7 @@ function registerPlanningCanvas(pi: ExtensionAPI, client: PlanningSession) {
     const input = event.input as { path?: unknown };
     if (typeof input.path !== "string") return;
     try {
-      await registerArtifact(input.path, ctx.cwd, undefined, ctx.signal);
+      await registerArtifact(input.path, undefined, ctx.signal);
     } catch (error) {
       // Artifact display must never turn a successful file edit into a failed tool call.
       ctx.ui.notify(`Could not show planning artifact: ${error instanceof Error ? error.message : String(error)}`, "warning");
@@ -241,7 +233,6 @@ function registerPlanningCanvas(pi: ExtensionAPI, client: PlanningSession) {
     // The server's idle timeout handles sessions that are never resumed.
     sessionId = undefined;
     url = undefined;
-    registeredArtifacts.clear();
   });
 }
 
