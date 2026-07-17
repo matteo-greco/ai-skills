@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Planning canvas</title>
+  <style>
+    :root { color-scheme: light; --ink:#1f2937; --muted:#78716c; --line:#e7e5e4; --paper:#fff; --wash:#fafaf9; --accent:#4f46e5; --accent-soft:#eef2ff; --success:#047857; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--wash); color:var(--ink); font:15px/1.55 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    main { width:min(780px,calc(100% - 32px)); margin:0 auto; padding:48px 0 80px; }
+    header { display:flex; align-items:end; justify-content:space-between; gap:24px; border-bottom:1px solid var(--line); padding-bottom:18px; margin-bottom:28px; }
+    h1,h2 { font-family:ui-serif,Georgia,Cambria,"Times New Roman",serif; font-weight:600; color:#0f172a; }
+    h1 { margin:0; font-size:32px; letter-spacing:-.02em; }
+    h2 { margin:0; font-size:20px; line-height:1.35; }
+    #topic { color:var(--muted); margin-top:3px; }
+    #status { color:#a8a29e; font-size:12px; letter-spacing:.12em; text-transform:uppercase; }
+    #banner { display:none; position:sticky; top:0; z-index:5; padding:6px; background:#fef3c7; color:#92400e; text-align:center; font-size:13px; }
+    #banner.visible { display:block; }
+    #cards { display:grid; gap:18px; }
+    article { border:1px solid var(--line); border-radius:12px; background:var(--paper); padding:22px; box-shadow:0 1px 2px rgb(15 23 42 / .03); }
+    article.active { border:2px solid var(--accent); box-shadow:0 8px 24px rgb(79 70 229 / .08); }
+    article.editing { border-color:#d97706; }
+    article.pending { opacity:.6; border-style:dashed; }
+    .card-head { display:flex; justify-content:space-between; align-items:start; gap:16px; }
+    .context { margin:6px 0 0; color:var(--muted); }
+    .recommendation { margin:14px 0; padding:9px 11px; border-radius:7px; background:var(--accent-soft); color:#3730a3; font-size:14px; }
+    .options { display:grid; gap:4px; margin-top:16px; }
+    .option { display:flex; align-items:start; gap:10px; padding:8px 6px; border-radius:7px; cursor:pointer; }
+    .option:hover { background:#f5f5f4; }
+    .option input { margin-top:5px; }
+    .option strong { display:block; font-weight:600; }
+    .detail { color:var(--muted); font-size:14px; }
+    textarea { width:100%; margin-top:14px; min-height:78px; resize:vertical; border:1px solid #d6d3d1; border-radius:8px; padding:10px 11px; color:var(--ink); background:#fff; font:inherit; }
+    textarea:focus { outline:2px solid #c7d2fe; border-color:var(--accent); }
+    .actions { display:flex; gap:10px; align-items:center; margin-top:16px; }
+    button { border:0; border-radius:8px; padding:9px 14px; cursor:pointer; font:600 14px/1.2 inherit; }
+    button.primary { color:#fff; background:var(--accent); }
+    button.primary:hover { background:#4338ca; }
+    button.quiet { color:var(--muted); background:transparent; font-weight:500; }
+    button.link { padding:2px; color:var(--accent); background:transparent; font-size:13px; font-weight:500; }
+    .answers { display:flex; flex-wrap:wrap; gap:6px; margin-top:14px; }
+    .chip { border-radius:999px; padding:3px 9px; background:#ecfdf5; color:var(--success); font-size:13px; }
+    blockquote { margin:10px 0 0; border-left:2px solid #d6d3d1; padding-left:12px; color:#57534e; }
+    #thinking { display:none; align-items:center; gap:12px; margin-top:18px; border:1px dashed #c7d2fe; border-radius:12px; background:#f8faff; padding:18px 20px; color:#6366f1; }
+    #thinking.visible { display:flex; }
+    .spinner { width:18px; height:18px; flex:0 0 auto; border:2px solid #c7d2fe; border-top-color:var(--accent); border-radius:50%; animation:spin .8s linear infinite; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    #session-actions { margin-top:30px; padding-top:18px; border-top:1px solid var(--line); text-align:right; }
+    #done { display:none; margin-top:36px; text-align:center; color:var(--muted); }
+    @media (prefers-reduced-motion:reduce) { .spinner { animation-duration:1.8s; } }
+    @media (max-width:600px) { main { width:min(100% - 20px,780px); padding-top:28px; } article { padding:17px; } header { align-items:start; } }
+  </style>
+</head>
+<body>
+  <div id="banner">Reconnecting to the planning session…</div>
+  <main>
+    <header>
+      <div><h1>Planning canvas</h1><div id="topic"></div></div>
+      <div id="status">Connecting</div>
+    </header>
+    <section id="cards"></section>
+    <div id="thinking" role="status" aria-live="polite">
+      <span class="spinner" aria-hidden="true"></span>
+      <span id="thinking-label">Generating the next question…</span>
+    </div>
+    <div id="session-actions"><button id="cancel-session" class="quiet">Cancel session</button></div>
+    <div id="done"></div>
+  </main>
+<script>
+  const token = new URLSearchParams(location.search).get("token") || "";
+  const headers = { "content-type":"application/json", "x-planning-canvas-token":token };
+  const cards = document.querySelector("#cards");
+  const editing = new Set();
+  let lastSignature = "";
+
+  const element = (tag, className, text) => {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  };
+
+  async function api(path, options = {}) {
+    const response = await fetch(path, { ...options, headers:{ ...headers, ...(options.headers || {}) } });
+    if (!response.ok) throw new Error(await response.text());
+    return response.json();
+  }
+
+  function signature(state) {
+    return JSON.stringify([state.status, state.tree.map(n => [n.id,n.status,n.answer]), [...editing]]);
+  }
+
+  async function tick() {
+    try {
+      const state = await api("/state?token=" + encodeURIComponent(token));
+      document.querySelector("#banner").classList.remove("visible");
+      document.querySelector("#topic").textContent = state.topic;
+      document.querySelector("#status").textContent = state.status;
+      const nextSignature = signature(state);
+      if (nextSignature !== lastSignature) {
+        lastSignature = nextSignature;
+        render(state);
+      }
+    } catch {
+      document.querySelector("#banner").classList.add("visible");
+      document.querySelector("#status").textContent = "Offline";
+    }
+  }
+
+  function render(state) {
+    cards.replaceChildren();
+    let active;
+    for (const question of state.tree) {
+      let card;
+      if (editing.has(question.id)) card = questionCard(question, true);
+      else if (question.status === "active") card = questionCard(question, false);
+      else card = resolvedCard(question);
+      cards.append(card);
+      if (question.status === "active") active = card;
+    }
+    const terminal = state.status !== "live";
+    const hasActiveQuestion = state.tree.some(question => question.status === "active");
+    const thinking = document.querySelector("#thinking");
+    thinking.classList.toggle("visible", !terminal && !hasActiveQuestion);
+    document.querySelector("#thinking-label").textContent = state.tree.length === 0
+      ? "Preparing the first question…"
+      : "Generating the next question…";
+    document.querySelector("#session-actions").style.display = terminal ? "none" : "block";
+    const done = document.querySelector("#done");
+    done.style.display = terminal ? "block" : "none";
+    done.textContent = state.status === "cancelled" ? "Session cancelled. You can close this tab." : "Session closed. You can close this tab.";
+    if (active) active.scrollIntoView({ behavior:"smooth", block:"center" });
+  }
+
+  function resolvedCard(question) {
+    const card = element("article", question.status === "pending" ? "pending" : "");
+    const head = element("div", "card-head");
+    head.append(element("h2", "", question.question));
+    if (question.answer) {
+      const edit = element("button", "link", "Edit");
+      edit.onclick = () => { editing.add(question.id); lastSignature = ""; tick(); };
+      head.append(edit);
+    }
+    card.append(head);
+    if (question.answer) {
+      const answers = element("div", "answers");
+      for (const id of question.answer.selectedOptionIds || []) {
+        const option = (question.options || []).find(item => item.id === id);
+        answers.append(element("span", "chip", option ? option.label : id === "__other__" ? "None of the above" : id));
+      }
+      card.append(answers);
+      if (question.answer.note) card.append(element("blockquote", "", question.answer.note));
+    } else {
+      card.append(element("p", "context", "Waiting for a later decision."));
+    }
+    return card;
+  }
+
+  function questionCard(question, isEdit) {
+    const card = element("article", "active" + (isEdit ? " editing" : ""));
+    card.append(element("h2", "", question.question));
+    if (question.context) card.append(element("p", "context", question.context));
+    if (question.recommendation) card.append(element("div", "recommendation", "★ " + question.recommendation));
+
+    const form = element("form");
+    const selected = new Set(question.answer?.selectedOptionIds || question.recommendedOptionIds || []);
+    if (question.answerType === "single" || question.answerType === "multi") {
+      const options = element("div", "options");
+      const type = question.answerType === "single" ? "radio" : "checkbox";
+      for (const option of [...(question.options || []), { id:"__other__", label:"None of the above", detail:"Write your answer in the note below." }]) {
+        const label = element("label", "option");
+        const input = element("input");
+        input.type = type;
+        input.name = "choice";
+        input.value = option.id;
+        input.checked = selected.has(option.id);
+        const copy = element("span");
+        copy.append(element("strong", "", option.label));
+        if (option.detail) copy.append(element("span", "detail", option.detail));
+        label.append(input, copy);
+        options.append(label);
+      }
+      form.append(options);
+    }
+
+    const note = element("textarea");
+    note.name = "note";
+    note.value = question.answer?.note || "";
+    note.placeholder = question.answerType === "free" ? "Your answer…" : "Add a caveat or write your own answer…";
+    form.append(note);
+
+    const actions = element("div", "actions");
+    const submit = element("button", "primary", isEdit ? "Save change" : question.answerType === "confirm" ? "Confirm" : "Answer");
+    submit.type = "submit";
+    actions.append(submit);
+    if (isEdit) {
+      const cancel = element("button", "quiet", "Cancel edit");
+      cancel.type = "button";
+      cancel.onclick = () => { editing.delete(question.id); lastSignature = ""; tick(); };
+      actions.append(cancel);
+    }
+    form.append(actions);
+    form.onsubmit = async event => {
+      event.preventDefault();
+      let selectedOptionIds = [];
+      if (question.answerType === "confirm") selectedOptionIds = ["confirmed"];
+      else if (question.answerType !== "free") selectedOptionIds = [...form.querySelectorAll('input[name="choice"]:checked')].map(input => input.value);
+      await api(isEdit ? "/edit" : "/answer", { method:"POST", body:JSON.stringify({ nodeId:question.id, selectedOptionIds, note:note.value.trim() }) });
+      editing.delete(question.id);
+      lastSignature = "";
+      tick();
+    };
+    card.append(form);
+    return card;
+  }
+
+  document.querySelector("#cancel-session").onclick = async () => {
+    if (!confirm("Cancel this planning session?")) return;
+    await api("/cancel", { method:"POST", body:"{}" });
+    lastSignature = "";
+    tick();
+  };
+
+  tick();
+  setInterval(tick, 1000);
+</script>
+</body>
+</html>
