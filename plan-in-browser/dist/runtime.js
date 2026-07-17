@@ -10,11 +10,18 @@ const option = (name) => {
     const index = args.indexOf(name);
     return index >= 0 ? args[index + 1] : undefined;
 };
+const parseTerminationReason = (value) => {
+    if (!value || value === "closed")
+        return "closed";
+    if (value === "idle")
+        return "idle";
+    throw new Error(`invalid termination reason: ${value}`);
+};
 const sessionId = option("--session");
 const token = option("--token");
 const dir = option("--dir");
 const topic = option("--topic") || "Planning session";
-const terminationReason = option("--termination-reason") || "closed";
+const terminationReason = parseTerminationReason(option("--termination-reason"));
 const CLOSE_GRACE_MS = 1500;
 const configuredIdleMs = Number(process.env.PLANNING_CANVAS_IDLE_MS);
 const IDLE_MS = Number.isFinite(configuredIdleMs) && configuredIdleMs > 0

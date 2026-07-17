@@ -21,6 +21,7 @@ type PlanningState = {
 };
 type Waiter = { cursor: number; res: ServerResponse };
 type AnswerInput = { nodeId: string; selectedOptionIds?: string[]; note?: string };
+type TerminationReason = "closed" | "idle";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const pageRoot = join(here, "..", "page");
@@ -29,12 +30,17 @@ const option = (name: string) => {
   const index = args.indexOf(name);
   return index >= 0 ? args[index + 1] : undefined;
 };
+const parseTerminationReason = (value: string | undefined): TerminationReason => {
+  if (!value || value === "closed") return "closed";
+  if (value === "idle") return "idle";
+  throw new Error(`invalid termination reason: ${value}`);
+};
 
 const sessionId = option("--session");
 const token = option("--token");
 const dir = option("--dir");
 const topic = option("--topic") || "Planning session";
-const terminationReason = option("--termination-reason") || "closed";
+const terminationReason = parseTerminationReason(option("--termination-reason"));
 const CLOSE_GRACE_MS = 1500;
 const configuredIdleMs = Number(process.env.PLANNING_CANVAS_IDLE_MS);
 const IDLE_MS = Number.isFinite(configuredIdleMs) && configuredIdleMs > 0
@@ -263,7 +269,7 @@ server.listen(0, "127.0.0.1", () => {
   process.stdout.write(`${JSON.stringify({ port: address.port })}\n`);
 });
 
-function shutdown(reason: string = "closed", stateAlreadyPersisted = false) {
+function shutdown(reason: TerminationReason = "closed", stateAlreadyPersisted = false) {
   if (shuttingDown) return;
   shuttingDown = true;
   state.status = state.status === "cancelled" ? "cancelled" : reason;
