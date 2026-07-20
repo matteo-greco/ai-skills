@@ -4,6 +4,12 @@ export class NoRecoverablePlanningSessionError extends Error {
         this.name = "NoRecoverablePlanningSessionError";
     }
 }
+export class NoActivePlanningSessionError extends Error {
+    constructor() {
+        super("No planning canvas is active.");
+        this.name = "NoActivePlanningSessionError";
+    }
+}
 export function createPlanningSessionOwner({ client, record, }) {
     let state = { kind: "none" };
     async function attach(sessionId) {
@@ -68,7 +74,7 @@ export function createPlanningSessionOwner({ client, record, }) {
         },
         async artifact(path, title, signal) {
             if (state.kind !== "attached")
-                throw new Error("No planning canvas is active.");
+                throw new NoActivePlanningSessionError();
             const owned = state;
             const artifact = await client.artifact(owned.sessionId, path, title, signal);
             return { path: artifact.path, sessionId: owned.sessionId, url: owned.url };

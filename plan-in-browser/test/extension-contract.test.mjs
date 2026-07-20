@@ -193,6 +193,22 @@ test("the resume command presents missing recoverable ownership as a warning", a
   ]]);
 });
 
+test("successful edits outside planning do not attempt to show artifacts", async () => {
+  const client = planningSessionAdapter();
+  let artifactCalls = 0;
+  client.artifact = async () => { artifactCalls += 1; throw new Error("must not display"); };
+  const registered = registrationHarness(client);
+  const { context, notifications } = adapterContext();
+
+  await registered.events.get("tool_result")(
+    { toolName: "write", isError: false, input: { path: "notes.md" } },
+    context,
+  );
+
+  assert.equal(artifactCalls, 0);
+  assert.deepEqual(notifications, []);
+});
+
 test("automatic artifact failures remain warnings after successful edits", async () => {
   const client = planningSessionAdapter();
   client.artifact = async () => { throw new Error("display unavailable"); };

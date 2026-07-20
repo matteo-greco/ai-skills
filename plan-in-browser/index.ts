@@ -3,6 +3,7 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import {
   createPlanningSessionOwner,
+  NoActivePlanningSessionError,
   NoRecoverablePlanningSessionError,
 } from "./dist/planning-session-owner.js";
 import { PlanningSessionClient, type CanvasEvent } from "./dist/session.js";
@@ -186,6 +187,8 @@ function registerPlanningCanvas(pi: ExtensionAPI, client: PlanningSession) {
     try {
       await owner.artifact(input.path, undefined, ctx.signal);
     } catch (error) {
+      // Edits outside planning have no artifact destination and need no notification.
+      if (error instanceof NoActivePlanningSessionError) return;
       // Artifact display must never turn a successful file edit into a failed tool call.
       ctx.ui.notify(`Could not show planning artifact: ${errorMessage(error)}`, "warning");
     }

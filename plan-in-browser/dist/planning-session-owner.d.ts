@@ -61,6 +61,9 @@ export type PlanningSessionOwner = {
 export declare class NoRecoverablePlanningSessionError extends Error {
     constructor();
 }
+export declare class NoActivePlanningSessionError extends Error {
+    constructor();
+}
 export declare function createPlanningSessionOwner({ client, record, }: {
     client: PlanningSessionOperations;
     record(entry: PlanningSessionEntry): void;
