@@ -37,7 +37,7 @@
       document.querySelector("#banner").classList.remove("visible");
       document.querySelector("#topic").textContent = state.topic;
       document.querySelector("#status").textContent = state.status;
-      sessionTerminal = state.status !== "live";
+      sessionTerminal = state.status !== "open";
       if (sessionTerminal && pollTimer) clearInterval(pollTimer);
       const nextSignature = signature(state);
       if (nextSignature !== lastSignature) {
@@ -63,7 +63,7 @@
       cards.append(card);
       if (question.status === "active") active = card;
     }
-    const terminal = state.status !== "live";
+    const terminal = state.status !== "open";
     const hasActiveQuestion = state.tree.some(question => question.status === "active");
     const thinking = document.querySelector("#thinking");
     thinking.classList.toggle("visible", !terminal && !hasActiveQuestion);

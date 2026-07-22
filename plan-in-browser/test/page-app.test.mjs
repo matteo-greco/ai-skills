@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
+import vm from "node:vm";
 
 import { PlanningSessionClient } from "../dist/session.js";
 
@@ -32,6 +33,45 @@ test("the planning page rejects inline JavaScript", { timeout: 10_000 }, async (
   } finally {
     await harness.cleanUp();
   }
+});
+
+test("an open planning session remains live while waiting for another question", async () => {
+  const elements = new Map();
+  const element = () => ({
+    append(...children) { this.firstElementChild ||= children[0]; },
+    classList: { add() {}, remove() {}, toggle() {} },
+    replaceChildren(...children) { this.firstElementChild = children[0]; },
+    style: {},
+  });
+  const document = {
+    createElement: element,
+    createTextNode: element,
+    querySelector(selector) {
+      if (!elements.has(selector)) elements.set(selector, element());
+      return elements.get(selector);
+    },
+  };
+  let pollingStopped = false;
+  const script = await readFile(new URL("../page/app.js", import.meta.url), "utf8");
+
+  vm.runInNewContext(script, {
+    URLSearchParams,
+    document,
+    fetch: async () => ({
+      ok: true,
+      async json() {
+        return { topic: "Two questions", status: "open", tree: [], artifacts: [] };
+      },
+    }),
+    location: { search: "?token=test" },
+    setInterval: () => 1,
+    clearInterval: () => { pollingStopped = true; },
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(pollingStopped, false);
+  assert.equal(document.querySelector("#session-actions").style.display, "block");
+  assert.equal(document.querySelector("#done").style.display, "none");
 });
 
 test("the planning page serves its required browser assets", { timeout: 10_000 }, async () => {
