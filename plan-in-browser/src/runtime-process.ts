@@ -207,11 +207,16 @@ export class ControlledPlanningRuntime extends ChildProcessPlanningRuntime {
 
   async idle(sessionId: string | undefined) {
     const child = this.childForSession(sessionId);
-    await new Promise<void>((resolve, reject) => {
-      child.once("error", reject);
-      child.once("exit", () => resolve());
-      if (!child.kill("SIGTERM")) reject(new Error(`could not stop planning runtime: ${sessionId}`));
-    });
+    child.ref();
+    try {
+      await new Promise<void>((resolve, reject) => {
+        child.once("error", reject);
+        child.once("exit", () => resolve());
+        if (!child.kill("SIGTERM")) reject(new Error(`could not stop planning runtime: ${sessionId}`));
+      });
+    } finally {
+      child.unref();
+    }
   }
 
   hang(sessionId: string | undefined) {
@@ -221,9 +226,14 @@ export class ControlledPlanningRuntime extends ChildProcessPlanningRuntime {
 
   async exit(sessionId: string | undefined) {
     const child = this.childForSession(sessionId);
-    await new Promise<void>((resolve) => {
-      child.once("exit", () => resolve());
-      child.kill("SIGKILL");
-    });
+    child.ref();
+    try {
+      await new Promise<void>((resolve) => {
+        child.once("exit", () => resolve());
+        child.kill("SIGKILL");
+      });
+    } finally {
+      child.unref();
+    }
   }
 }
