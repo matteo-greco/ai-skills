@@ -24,8 +24,9 @@
     #status { color:#a8a29e; font-size:12px; letter-spacing:.12em; text-transform:uppercase; }
     #banner { display:none; position:sticky; top:0; z-index:5; padding:6px; background:#fef3c7; color:#92400e; text-align:center; font-size:13px; }
     #banner.visible { display:block; }
-    #cards { display:grid; gap:18px; }
-    article { border:1px solid var(--line); border-radius:12px; background:var(--paper); padding:22px; box-shadow:0 1px 2px rgb(15 23 42 / .03); }
+    #cards { display:grid; gap:18px; counter-reset:question; }
+    article { border:1px solid var(--line); border-radius:12px; background:var(--paper); padding:22px; box-shadow:0 1px 2px rgb(15 23 42 / .03); counter-increment:question; }
+    article::before { display:block; margin-bottom:6px; color:var(--muted); content:"Question #" counter(question); font-size:11px; font-weight:600; letter-spacing:.1em; text-transform:uppercase; }
     article.active { border:2px solid var(--accent); box-shadow:0 8px 24px rgb(79 70 229 / .08); }
     article.editing { border-color:#d97706; }
     article.pending { opacity:.6; border-style:dashed; }
