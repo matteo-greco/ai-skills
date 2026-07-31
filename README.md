@@ -4,7 +4,7 @@
 
 Small, differentiated additions to [Matt Pocock's engineering skills](https://github.com/mattpocock/skills).
 
-Matt's repository owns the general engineering workflow: grilling, specs, tickets, implementation, TDD, code review, triage, debugging, prototyping, and architecture. This repository adds browser-based planning, activity recaps, and specialist GDPR audit verification.
+Matt's repository owns the general engineering workflow: grilling, specs, tickets, implementation, TDD, code review, triage, debugging, prototyping, and architecture. This repository adds browser-based planning, note backfilling, activity recaps, and specialist GDPR audit verification.
 
 ## Setup
 
@@ -30,7 +30,7 @@ npx skills@latest add matteo-greco/ai-skills -g -s '*' -y
 Update by rerunning the install commands. Uninstall this repository's skills with:
 
 ```bash
-npx skills remove -g plan-in-browser gdpr-audit-verify recap
+npx skills remove -g plan-in-browser backfill-note gdpr-audit-verify recap
 ```
 
 ## Recommended engineering flow
@@ -105,6 +105,7 @@ Use `wayfinder` only when the decisions cannot fit in one session. It maps and r
 ## Skills in this repository
 
 - **plan-in-browser** — Run any installed planning or grilling skill unchanged while routing every human decision through an interactive browser canvas. Designed to wrap Matt's `grill-with-docs`, `grill-me`, `grilling`, and `wayfinder` skills.
+- **backfill-note** — Fill empty sections in a specified note using evidence from that note and related notes in the same vault while preserving existing content.
 - **recap** — Gather git activity and connected PM tickets, detect the latest work burst, and render a terse 3–5 bullet executive brief for standup or Slack.
 - **gdpr-audit-verify** — Reproduce external GDPR, TDDDG, and ePrivacy audit claims in a real browser and classify them against EU and German rules and CJEU case law.
 
