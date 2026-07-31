@@ -17,4 +17,4 @@ Fill empty sections in the specified note. If the note cannot be found or is not
 3. Fill only sections with no content or placeholders such as `TODO` or `TBD`. Preserve all other content, including frontmatter.
 4. Re-read the note and inspect the diff to ensure no existing content was replaced.
 
-Summarize what you filled and note any sections left empty. Suggest a better title or filename, but do not rename the note without confirmation.
+Summarize what you filled and note any sections left empty. Suggest a better title or filename and ask the user if they want it applied. Never apply without consent.
